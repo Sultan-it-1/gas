@@ -25,8 +25,15 @@ const CONFIG = {
  * دالة تخديم الواجهة (Web App)
  */
 function doGet(e) {
+  const page = (e && e.parameter && (e.parameter.page || e.parameter.p || '')) || '';
+  if (page.toLowerCase() === 'admin') {
+    return HtmlService.createHtmlOutputFromFile('Admin')
+      .setTitle('Admin Portal — استيراد وحفظ البيانات | Agent Dashboard')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+
   const template = HtmlService.createTemplateFromFile('Index');
-  
   template.initialData = JSON.stringify({
     title: "Agent Dashboard | لوحة أداء الوكلاء",
     timestamp: new Date().toISOString()
@@ -727,3 +734,74 @@ function logSystemEvent(type, action, details) {
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
+
+/**
+  * الحصول على رابط Google Sheet لفتحه من المتصفح
+  */
+function getSpreadsheetUrl() {
+  try {
+    const ss = getTargetSpreadsheet();
+    return ss ? ss.getUrl() : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * دالة استيراد وحفظ البيانات المنسوخة من بوابة الأدمن
+ */
+function importDataFromAdminPortal(rawJson, options) {
+  try {
+    options = options || { smartDates: true, updateSummary: true, updateArchive: true };
+    if (!rawJson || typeof rawJson !== 'string' || !rawJson.trim()) {
+      return { success: false, message: "لم يتم استلام أي نص JSON." };
+    }
+
+    const payload = JSON.parse(rawJson);
+    const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
+    let summaryCount = 0;
+    let drillCount = 0;
+    let ticketsCount = 0;
+
+    // 1. استخراج وحفظ الوكلاء الملخصين
+    const agentsList = payload.agents || payload.summaryAgents || (Array.isArray(payload) && payload[0]?.email && !payload[0]?.metric ? payload : null);
+    if (agentsList && Array.isArray(agentsList) && agentsList.length > 0 && options.updateSummary !== false) {
+      saveAgentsToSheet(agentsList, dateStr);
+      summaryCount = agentsList.length;
+    }
+
+    // 2. استخراج وحفظ مقاييس الـ Drills التفصيلية
+    const results = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : null);
+    if (results && Array.isArray(results) && results.length > 0) {
+      saveExtensionResultsToSheet(results, dateStr, summaryCount === 0);
+      drillCount = results.length;
+      results.forEach(r => {
+        if (r.rows && Array.isArray(r.rows)) ticketsCount += r.rows.length;
+      });
+
+      if (summaryCount === 0) {
+        summaryCount = new Set(results.map(r => r.agent).filter(Boolean)).size;
+      }
+    }
+
+    const logMsg = `استيراد من بوابة الأدمن: (${summaryCount}) وكيل، و (${drillCount}) مقياس، و (${ticketsCount}) تذكرة لتاريخ ${dateStr}.`;
+    logSystemEvent("SUCCESS", "Admin Portal Import", logMsg);
+
+    return {
+      success: true,
+      agentsCount: summaryCount,
+      drillCount: drillCount,
+      ticketsCount: ticketsCount,
+      date: dateStr,
+      message: `تم بنجاح حفظ وتحديث البيانات في Google Sheet!`
+    };
+
+  } catch (err) {
+    logSystemEvent("ERROR", "Admin Portal Failed", err.message);
+    return {
+      success: false,
+      message: err.message
+    };
+  }
+}
+
