@@ -962,15 +962,59 @@ function clearCachedOverview() {
 }
 
 /**
+ * كاش سريع للسجلات المطبّعة لكل ملف مقياس (agent_metric.json).
+ * يمنع إعادة قراءة وتطبيع ملف Drive الضخم في كل مزامنة (توفير كبير في مسار الكتابة).
+ */
+function getCachedMetricRecord(fileName) {
+  try {
+    const raw = CacheService.getScriptCache().get('MRC_' + fileName);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Metric record cache read warning:', e);
+  }
+  return null;
+}
+
+function setCachedMetricRecord(fileName, record) {
+  try {
+    const s = JSON.stringify(record);
+    if (s.length < 90000) {
+      CacheService.getScriptCache().put('MRC_' + fileName, s, 21600); // 6 ساعات
+    }
+  } catch (e) {
+    console.warn('Metric record cache write warning:', e);
+  }
+}
+
+function clearCachedMetricRecord(fileName) {
+  try {
+    CacheService.getScriptCache().remove('MRC_' + fileName);
+  } catch (e) {}
+}
+
+/**
  * ============================================================================
  * 4. حفظ وتجزئة كل مقياس لكل موظف في ملف مستقل مع التحليل الرياضي الشامل
  * ============================================================================
  */
-function savePayloadToMicroPartitionedDrive(payload) {
+function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
+  // rebuildSummary: عند false نكتب ملفات المقاييس فقط بدون إعادة بناء الملخص
+  // (يُستخدم في الاستيراد المجزأ للأجزاء غير النهائية لتسريع الكتابة الهائلة)
+  rebuildSummary = rebuildSummary !== false;
+
   const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
   const nowStr = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
   const parentFolder = getOrCreateDataFolder();
   const drillsFolder = getOrCreateDrillsFolder();
+
+  // قفل شامل لعملية الكتابة: يمنع تزامن مزامنتين على ملف المقياس وعلى ملف الملخص معاً
+  const writeLock = LockService.getScriptLock();
+  try {
+    writeLock.waitLock(40000);
+  } catch (lockErr) {
+    // إذا تعذر الحصول على القفل نستمر بشكل غير مثالي لكن لا نجهض الاستيراد
+    console.warn("Write lock acquire warning:", lockErr && lockErr.message);
+  }
 
   // استخراج وتطبيع السجلات الواردة بدقة
   const rawResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : (payload.header ? [payload] : []));
@@ -1001,47 +1045,49 @@ function savePayloadToMicroPartitionedDrive(payload) {
   for (const [key, recs] of incomingMap.entries()) {
     const [agentEmail, metric] = key.split('::');
     const fileName = getAgentMetricFileSlug(agentEmail, metric) + ".json";
-    const existingFiles = drillsFolder.getFilesByName(fileName);
 
-    let existingRecord = null;
-    let targetFile = null;
+    try {
+      let targetFile = null;
+      const existingFiles = drillsFolder.getFilesByName(fileName);
+      if (existingFiles.hasNext()) targetFile = existingFiles.next();
 
-    if (existingFiles.hasNext()) {
-      targetFile = existingFiles.next();
-      try {
-        const content = targetFile.getBlob().getDataAsString();
-        if (content && content.trim()) {
-          const parsed = JSON.parse(content);
-          existingRecord = normalizeRecord(parsed, 0, fileName);
+      // قراءة من كاش سريع أولاً لتجنب إعادة فتح/قراءة ملف Drive الضخم
+      let existingRecord = getCachedMetricRecord(fileName);
+      if (!existingRecord && targetFile) {
+        try {
+          const content = targetFile.getBlob().getDataAsString();
+          if (content && content.trim()) {
+            existingRecord = normalizeRecord(JSON.parse(content), 0, fileName);
+            setCachedMetricRecord(fileName, existingRecord);
+          }
+        } catch (e) {
+          console.warn(`Failed reading existing metric file ${fileName}:`, e);
         }
-      } catch (e) {
-        console.warn(`Failed reading existing metric file ${fileName}:`, e);
       }
-    }
 
-    // دمج السجلات مع منع التكرار (Deduplication)
-    let finalRecord = null;
-    if (existingRecord) {
-      const merged = mergeRecords([existingRecord], recs);
-      finalRecord = merged.records[0];
-    } else {
-      const merged = mergeRecords([], recs);
-      finalRecord = merged.records[0];
-    }
+      // دمج السجلات مع منع التكرار (Deduplication)
+      const merged = existingRecord ? mergeRecords([existingRecord], recs) : mergeRecords([], recs);
+      const finalRecord = merged.records[0];
 
-    if (finalRecord) {
-      finalRecord.date = dateStr;
-      finalRecord.savedAt = nowStr;
-      allUpdatedRecords.push(finalRecord);
-      drillCount++;
-      ticketsCount += finalRecord.rows.length;
+      if (finalRecord) {
+        finalRecord.date = dateStr;
+        finalRecord.savedAt = nowStr;
+        allUpdatedRecords.push(finalRecord);
+        drillCount++;
+        ticketsCount += finalRecord.rows.length;
 
-      const fileJson = JSON.stringify(finalRecord);
-      if (targetFile) {
-        targetFile.setContent(fileJson);
-      } else {
-        drillsFolder.createFile(fileName, fileJson, MimeType.PLAIN_TEXT);
+        const fileJson = JSON.stringify(finalRecord);
+        if (targetFile) {
+          targetFile.setContent(fileJson);
+        } else {
+          drillsFolder.createFile(fileName, fileJson, MimeType.PLAIN_TEXT);
+        }
+        // تحديث الكاش بعد الكتابة حتى يكون متسقاً مع الملف
+        setCachedMetricRecord(fileName, finalRecord);
       }
+    } catch (metricErr) {
+      // عزل الخطأ: لا نسمح بفشل مقياس واحد بإجهاض عملية الاستيراد بالكامل
+      console.warn(`Metric save failed for ${fileName}:`, metricErr && metricErr.message);
     }
   }
 
@@ -1055,19 +1101,35 @@ function savePayloadToMicroPartitionedDrive(payload) {
     const dName = dFile.getName();
     if (!dName.endsWith('.json')) continue;
 
-    const parts = dName.replace('.json', '').replace('agent_', '').split('_');
-    if (parts.length >= 2) {
-      const isAlreadyProcessed = allUpdatedRecords.some(r => getAgentMetricFileSlug(r.agent, r.metric) + '.json' === dName);
-      if (!isAlreadyProcessed) {
-        try {
-          const content = dFile.getBlob().getDataAsString();
-          if (content && content.trim()) {
-            const parsed = JSON.parse(content);
-            allUpdatedRecords.push(normalizeRecord(parsed, 0, dName));
-          }
-        } catch (e) {}
-      }
+    const isAlreadyProcessed = allUpdatedRecords.some(r => getAgentMetricFileSlug(r.agent, r.metric) + '.json' === dName);
+    if (!isAlreadyProcessed) {
+      try {
+        // استخدام كاش السجل لتجنب إعادة تطبيع ملفات Drive المُخزَّنة سابقاً
+        let cached = getCachedMetricRecord(dName);
+        if (cached) {
+          allUpdatedRecords.push(cached);
+          continue;
+        }
+        const content = dFile.getBlob().getDataAsString();
+        if (content && content.trim()) {
+          const parsed = normalizeRecord(JSON.parse(content), 0, dName);
+          allUpdatedRecords.push(parsed);
+          setCachedMetricRecord(dName, parsed);
+        }
+      } catch (e) {}
     }
+  }
+
+  // وضع التجزئة غير النهائي: نكتب الملفات فقط ونعود فوراً دون إعادة بناء الملخص الثقيل
+  if (!rebuildSummary) {
+    try { writeLock.releaseLock(); } catch (e) {}
+    return {
+      success: true,
+      partial: true,
+      drillCount: drillCount,
+      ticketsCount: ticketsCount,
+      date: dateStr
+    };
   }
 
   // 5. تشغيل المحرك الرياضي الشامل المعتمد لحساب كافة مؤشرات الفريق والوكلاء
@@ -1271,6 +1333,16 @@ function savePayloadToMicroPartitionedDrive(payload) {
   clearCachedOverview();
   setCachedOverview(overviewData);
 
+  // إبطال كاش الخط الزمني لكل وكيل حتى لا تبقى أرقام قديمة بعد حفظ بيانات جديدة
+  try {
+    incomingMap.forEach((recs, key) => {
+      const agentEmail = key.split('::')[0];
+      if (agentEmail) clearCachedAgentTimeline(agentEmail);
+    });
+  } catch (cacheErr) {
+    console.warn("Agent timeline cache invalidation warning:", cacheErr.message);
+  }
+
   // مزامنة اختيارية لـ Google Sheet (الملخص فقط بدون تذاكر)
   try {
     syncSummaryToGoogleSheetIfConfigured(overviewData.agents, dateStr);
@@ -1278,12 +1350,53 @@ function savePayloadToMicroPartitionedDrive(payload) {
     console.warn("Sheet summary sync skipped or failed:", sheetErr.message);
   }
 
+  try { writeLock.releaseLock(); } catch (e) {}
+
   return {
     success: true,
+    partial: false,
     summaryCount: finalAgentsList.length,
     drillCount: drillCount,
     ticketsCount: ticketsCount,
     date: dateStr
+  };
+}
+
+/**
+ * استيراد مجزأ (Chunked Import) للبيانات الضخمة:
+ * يستقبل جزءاً من النتائج ورقم الجزء، ويكتب المقاييس فقط في الأجزاء
+ * غير النهائية، ويعيد بناء الملخص مرة واحدة في الجزء الأخير.
+ * يمنع تجاوز حدود حجم الطلب الواحد ويسرّع إضافة آلاف الصفوف.
+ */
+function importDataChunkFromAdminPortal(rawJsonOrResults, chunkIndex, totalChunks) {
+  let results = rawJsonOrResults;
+  try {
+    if (typeof rawJsonOrResults === 'string') {
+      const obj = JSON.parse(rawJsonOrResults.replace(/^\uFEFF/, ''));
+      results = obj.results || obj;
+    }
+  } catch (e) {
+    return { success: false, message: "تعذر تحليل جزء البيانات." };
+  }
+
+  const idx = parseInt(chunkIndex, 10);
+  const total = parseInt(totalChunks, 10);
+  const isFinal = Number.isNaN(idx) || Number.isNaN(total) || (idx + 1) >= total;
+
+  const payload = Array.isArray(results) && (results[0] && results[0].metric)
+    ? { results: results }
+    : { results: [results] };
+
+  const saveResult = savePayloadToMicroPartitionedDrive(payload, isFinal);
+
+  return {
+    success: true,
+    final: isFinal,
+    chunkIndex: isNaN(idx) ? 0 : idx,
+    totalChunks: isNaN(total) ? 1 : total,
+    drillCount: saveResult.drillCount,
+    ticketsCount: saveResult.ticketsCount,
+    summaryCount: saveResult.summaryCount || 0
   };
 }
 
@@ -1577,6 +1690,250 @@ function getDashboardDataFromSheet() {
 
 function getAgentDrillRowsFromSheet(email, metric) {
   return getAgentDetailData(email, metric);
+}
+
+/**
+ * قراءة الخط الزمني اليومي لوكيل واحد فقط (لا يتم دمج وكلاء آخرين).
+ * يعتمد على ملفات drills الخاصة بهذا الوكيل حصرياً.
+ * يتم تخزين النتيجة في كاش سريع لأن الحساب يقرأ كل صفوف الوكيل (قد تكون آلافاً).
+ */
+function getCachedAgentTimeline(email) {
+  try {
+    const raw = CacheService.getScriptCache().get('AGT_' + email);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Agent timeline cache read warning:', e);
+  }
+  return null;
+}
+
+function setCachedAgentTimeline(email, obj) {
+  try {
+    const s = JSON.stringify(obj);
+    if (s.length < 90000) {
+      CacheService.getScriptCache().put('AGT_' + email, s, 21600); // 6 ساعات
+    }
+  } catch (e) {
+    console.warn('Agent timeline cache write warning:', e);
+  }
+}
+
+function clearCachedAgentTimeline(email) {
+  try {
+    CacheService.getScriptCache().remove('AGT_' + email);
+  } catch (e) {}
+}
+
+function getAgentDailyTimeline(email) {
+  try {
+    if (!email) {
+      return { success: false, email: email, days: [] };
+    }
+
+    // 1. كاش سريع أولاً
+    const cached = getCachedAgentTimeline(email);
+    if (cached) {
+      return { success: true, email: email, days: cached };
+    }
+
+    const drillsFolder = getOrCreateDrillsFolder();
+    const prefix = getAgentFileSlug(email) + '_';
+    const files = drillsFolder.getFiles();
+    const records = [];
+
+    while (files.hasNext()) {
+      const f = files.next();
+      const name = f.getName();
+      if (!name.endsWith('.json') || name.indexOf(prefix) !== 0) continue;
+      try {
+        const content = f.getBlob().getDataAsString();
+        if (content && content.trim()) {
+          records.push(normalizeRecord(JSON.parse(content), 0, name));
+        }
+      } catch (e) {
+        // تجاهل أي ملف تالف لهذا الوكيل
+      }
+    }
+
+    if (records.length === 0) {
+      return { success: true, email: email, days: [] };
+    }
+
+    // بما أن الملفات مفصولة لكل وكيل، فلا حاجة لفلترة إضافية تعتمد على تطابق حالة الأحرف
+    const analytics = calculateAnalytics(records);
+    const days = Array.isArray(analytics.timeline) ? analytics.timeline : [];
+    setCachedAgentTimeline(email, days);
+
+    return {
+      success: true,
+      email: email,
+      days: days
+    };
+  } catch (err) {
+    return {
+      success: false,
+      email: email,
+      days: [],
+      error: String(err && err.message ? err.message : err)
+    };
+  }
+}
+
+/**
+ * ============================================================================
+ * 7. بنية القراءة/العرض المقيّدة (Server-Side Pagination Architecture)
+ *    لا نرسل أبداً كل الصفوف إلى المتصفح، بل نرسل صفحة صغيرة فقط بعد
+ *    الفلترة والترتيب على الخادم. هذا هو الحل لأحجام البيانات الضخمة
+ *    (1000+ صف لكل مقياس/موظف أسبوعياً).
+ * ============================================================================
+ */
+
+function parseTimeValueToSeconds(v) {
+  const s = String(v || '').trim();
+  if (!s) return 0;
+  if (s.indexOf(':') !== -1) {
+    const p = s.split(':');
+    return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n * 60;
+}
+
+function getAgentDrillPageFromSheet(email, metric, opts) {
+  opts = opts || {};
+  const page = Math.max(0, parseInt(opts.page, 10) || 0);
+  const pageSize = Math.min(500, Math.max(10, parseInt(opts.pageSize, 10) || 50));
+  const search = String(opts.search || '').toLowerCase().trim();
+  const datePreset = opts.datePreset || 'all';
+  const csatScore = opts.csatScore || 'all';
+  const channel = opts.channel || 'all';
+  const topSessions = opts.topSessions || 'all';
+  const targetMetric = (metric || 'csat').toLowerCase();
+
+  const detail = getAgentDetailData(email, targetMetric);
+  if (!detail || !detail.found || !detail.rows || !detail.rows.length) {
+    return {
+      success: true,
+      found: false,
+      email: email,
+      metric: targetMetric,
+      header: [],
+      rows: [],
+      total: 0,
+      page: 0,
+      pageSize: pageSize,
+      totalPages: 1,
+      count: 0
+    };
+  }
+
+  const header = detail.header || [];
+  const rows = detail.rows || [];
+
+  const csatIdx = findColIndex(header, 'csat_adjusted', 'csat', 'score');
+  const chanIdx = findColIndex(header, 'ticket_channel', 'channel');
+  let timeIdx = -1;
+  if (targetMetric === 'agbt') {
+    timeIdx = findColIndex(header, 'sum_basket_time_for_ticket_per_hour_min_ONLINE_WOMT', 'sum_basket_time_for_ticket_per_hour_min', 'basket_time', 'agbt', 'time');
+  } else if (targetMetric === 'abst') {
+    timeIdx = findColIndex(header, 'basket_session_time_min', 'session_time', 'basket_session_time', 'abst', 'time');
+  }
+
+  const today = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
+  const yDate = new Date(); yDate.setDate(yDate.getDate() - 1);
+  const yesterday = Utilities.formatDate(yDate, 'Asia/Riyadh', 'yyyy-MM-dd');
+  const weekDate = new Date(); weekDate.setDate(weekDate.getDate() - 7);
+  const weekStart = Utilities.formatDate(weekDate, 'Asia/Riyadh', 'yyyy-MM-dd');
+
+  let filtered = rows.filter(function (row) {
+    // بحث حر عبر أي خلية
+    if (search) {
+      let hit = false;
+      for (let i = 0; i < row.length; i++) {
+        if (String(row[i] || '').toLowerCase().indexOf(search) !== -1) { hit = true; break; }
+      }
+      if (!hit) return false;
+    }
+
+    // فلتر CSAT
+    if (csatScore !== 'all') {
+      const val = csatIdx !== -1 ? String(row[csatIdx] || '').toLowerCase().trim() : '';
+      const isGood = (val === 'good' || val === '5' || val === '4' || val === 'positive' || val.indexOf('ممتاز') !== -1 || val.indexOf('جيد') !== -1);
+      const isBad = (val === 'bad' || val === '1' || val === '2' || val === 'negative' || val.indexOf('سيء') !== -1);
+      if (csatScore === 'good' && !isGood) return false;
+      if (csatScore === 'bad' && !isBad) return false;
+    }
+
+    // فلتر القناة
+    if (channel !== 'all' && chanIdx !== -1) {
+      if (String(row[chanIdx] || '').toLowerCase().trim() !== channel.toLowerCase()) return false;
+    }
+
+    // فلتر التاريخ
+    if (datePreset !== 'all') {
+      const d = extractRowDate(row, header);
+      if (!d) return false;
+      if (datePreset === 'today' && d !== today) return false;
+      if (datePreset === 'yesterday' && d !== yesterday) return false;
+      if (datePreset === 'week' && (d < weekStart || d > today)) return false;
+    }
+
+    return true;
+  });
+
+  // فلتر أعلى الجلسات (Top N) بعد الفرز التنازلي زمنياً
+  if (topSessions !== 'all' && timeIdx !== -1) {
+    filtered.sort(function (a, b) {
+      return parseTimeValueToSeconds(b[timeIdx]) - parseTimeValueToSeconds(a[timeIdx]);
+    });
+    const n = topSessions === 'top5' ? 5 : 10;
+    filtered = filtered.slice(0, n);
+  }
+
+  // الترتيب العام على عمود محدد (يعمل فوق كل النتائج المفلترة)
+  const sortColIdx = (opts.sortColIdx !== undefined && opts.sortColIdx !== null && opts.sortColIdx !== '')
+    ? parseInt(opts.sortColIdx, 10)
+    : -1;
+  const sortAsc = opts.sortAsc !== false;
+  if (sortColIdx >= 0) {
+    filtered.sort(function (a, b) {
+      let va = a[sortColIdx];
+      let vb = b[sortColIdx];
+      if (typeof va === 'string' && va.indexOf(':') !== -1) {
+        va = parseTimeValueToSeconds(va);
+        vb = parseTimeValueToSeconds(vb);
+      } else if (!isNaN(parseFloat(va)) && String(va).indexOf('#') === -1 && String(va).indexOf('-') === -1 && String(va).indexOf('@') === -1) {
+        va = parseFloat(va);
+        vb = parseFloat(vb);
+      } else {
+        va = String(va || '').toLowerCase();
+        vb = String(vb || '').toLowerCase();
+      }
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const start = safePage * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+
+  return {
+    success: true,
+    found: true,
+    email: email,
+    metric: targetMetric,
+    header: header,
+    rows: pageRows,
+    total: total,
+    page: safePage,
+    pageSize: pageSize,
+    totalPages: totalPages,
+    count: pageRows.length
+  };
 }
 
 function importDataFromAdminPortal(rawJson, options) {
