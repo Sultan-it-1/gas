@@ -1,42 +1,49 @@
 /**
  * ============================================================================
- * AGENT PERFORMANCE HUB - GOOGLE APPS SCRIPT BACKEND
+ * AGENT PERFORMANCE HUB - GOOGLE WORKSPACE DRIVE BACKEND
  * ============================================================================
- * نظام قراءة وعرض أداء الوكلاء حصرياً من Google Sheets
- * يتم تغذية الشيت حصرياً من إضافة المتصفح (Agent Dashboard Extension)
- * مع منع تكرار البيانات نهائياً (Deduplication) وتحديث السجلات القائمة فقط
+ * نظام قاعدة بيانات سحابية متكاملة وسريعة تعمل بالكامل داخل Google Drive (DriveApp)
+ * في نطاق ورك سبيس الشركة، بدون قيود أو حدود لخلايا Google Sheets
+ * مع دعم التحديث التلقائي للملخص الإداري في Google Sheet (اختيارياً وبدون تكديس JSON)
  * ============================================================================
  */
 
 const CONFIG = {
-  // معرف ملف Google Sheet للتخزين
-  // - إذا كان السكربت مرتبطاً بالشيت (Container-bound عبر Extensions > Apps Script) اتركه فارغاً ""
-  // - إذا كان سكربتاً مستقلاً (Standalone) ضع معرف الشيت هنا بين علامتي التنصيص
+  // اسم المجلد المخصص في Google Drive الذي تُحفظ داخله قاعدة البيانات
+  DRIVE_FOLDER_NAME: "Agent_Performance_Hub_Data",
+
+  // اسم ملف قاعدة البيانات JSON المباشر داخل المجلد
+  DB_FILE_NAME: "database.json",
+
+  // معرف ملف Google Sheet للتخزين التلخيصي الإداري (اختياري)
+  // - إذا كان السكربت مرتبطاً بالشيت (Container-bound) اتركه فارغاً ""
+  // - إذا كان سكربتاً مستقلاً (Standalone) ضع معرف الشيت هنا
   SPREADSHEET_ID: "",
 
-  // أسماء أوراق العمل في Google Sheet
+  // أسماء أوراق العمل في Google Sheet (للملخص الإداري النظيف بدون أي JSON في الخلايا)
   SHEET_SUMMARY: "Daily_Summary",       // ملخص أداء الوكلاء لليوم
   SHEET_ARCHIVE: "Historical_Archive",   // أرشيف الملخص التاريخي التراكمي
-  SHEET_DRILLS: "Drill_Archive",         // الأرشيف التفصيلي لسجلات المقاييس (Drills)
   SHEET_LOGS: "System_Logs"              // سجل أحداث وعمليات المزامنة
 };
 
 /**
+ * ============================================================================
  * دالة تخديم الواجهة (Web App)
+ * ============================================================================
  */
 function doGet(e) {
   const page = (e && e.parameter && (e.parameter.page || e.parameter.p || '')) || '';
   const openAdmin = (page.toLowerCase() === 'admin');
 
-  // إذا طلب المستخدم صفحة Admin وكان ملف Admin المستقل موجوداً، يتم تخديمه
+  // إذا طلب المستخدم صفحة Admin
   if (openAdmin) {
     try {
       return HtmlService.createHtmlOutputFromFile('Admin')
-        .setTitle('Admin Portal — استيراد وحفظ البيانات | Agent Dashboard')
+        .setTitle('Admin Portal — استيراد وحفظ البيانات | Google Drive DB')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     } catch (errAdmin) {
-      // إذا لم يكن ملف Admin موجوداً، نخدم الداشبورد فوراً مع فتح نافذة الإدارة المنبثقة تلقائياً
+      // احتياطي في حال استدعاء الملف من قالب موحد
     }
   }
 
@@ -48,15 +55,14 @@ function doGet(e) {
   });
 
   return template.evaluate()
-    .setTitle(openAdmin ? 'Admin Portal — استيراد وحفظ البيانات' : 'Agent Dashboard — قراءة النتائج')
+    .setTitle(openAdmin ? 'Admin Portal — استيراد وحفظ البيانات' : 'Agent Dashboard — لوحة أداء الوكلاء')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /**
  * ============================================================================
- * استقبال وحفظ البيانات المرسلة من إضافة المتصفح فقط عبر POST
- * مع منع التكرار نهائياً وتحديث البيانات القائمة فقط
+ * استقبال وحفظ البيانات المرسلة من إضافة المتصفح عبر POST
  * ============================================================================
  */
 function doPost(e) {
@@ -69,32 +75,18 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
-    const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
-    let summaryCount = 0;
-    let drillCount = 0;
+    const saveResult = savePayloadToDrive(payload);
 
-    // 1. إذا تم إرسال مصفوفة الوكلاء الملخصة (agents أو summaryAgents) من الجدول الرئيسي
-    const agentsList = payload.agents || payload.summaryAgents || (Array.isArray(payload) ? payload : null);
-    if (agentsList && Array.isArray(agentsList) && agentsList.length > 0) {
-      saveAgentsToSheet(agentsList, dateStr);
-      summaryCount = agentsList.length;
-    }
-
-    // 2. إذا تم إرسال نتائج المقاييس التفصيلية (results) الناتجة عن الـ Drills
-    if (payload.results && Array.isArray(payload.results) && payload.results.length > 0) {
-      saveExtensionResultsToSheet(payload.results, dateStr, summaryCount === 0);
-      drillCount = payload.results.length;
-    }
-
-    const logMsg = `مزامنة بدون تكرار: (${summaryCount}) وكيل ملخص، و (${drillCount}) مقياس تفصيلي لتاريخ ${dateStr}.`;
-    logSystemEvent("SUCCESS", "Extension Sync", logMsg);
+    const logMsg = `مزامنة Drive ناجحة: (${saveResult.summaryCount}) وكيل ملخص، و (${saveResult.drillCount}) مقياس، و (${saveResult.ticketsCount}) تذكرة لتاريخ ${saveResult.date}.`;
+    logSystemEvent("SUCCESS", "Extension Sync to Drive", logMsg);
 
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      summaryCount: summaryCount,
-      drillCount: drillCount,
-      date: dateStr,
-      message: `تم حفظ وتحديث البيانات بنجاح في Google Sheet بدون تكرار! (${summaryCount} وكيل، ${drillCount} مقياس)`
+      summaryCount: saveResult.summaryCount,
+      drillCount: saveResult.drillCount,
+      ticketsCount: saveResult.ticketsCount,
+      date: saveResult.date,
+      message: `تم حفظ البيانات بنجاح وبدون حدود في Google Drive! (${saveResult.summaryCount} وكيل، ${saveResult.drillCount} مقياس، ${saveResult.ticketsCount} تذكرة)`
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
@@ -108,157 +100,375 @@ function doPost(e) {
 
 /**
  * ============================================================================
- * قراءة بيانات النظرة العامة للوكلاء — حصرياً ومباشرة من Google Sheet
+ * محرك قاعدة بيانات Google Drive (Drive Database Engine)
+ * ============================================================================
+ */
+
+/**
+ * الحصول على مجلد البيانات في Google Drive أو إنشاؤه تلقائياً
+ */
+function getOrCreateDataFolder() {
+  const folderName = CONFIG.DRIVE_FOLDER_NAME || "Agent_Performance_Hub_Data";
+  const folders = DriveApp.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(folderName);
+}
+
+/**
+ * الحصول على ملف قاعدة البيانات JSON داخل المجلد أو إنشاؤه بهيكل نظيف
+ */
+function getOrCreateDatabaseFile() {
+  const folder = getOrCreateDataFolder();
+  const files = folder.getFilesByName(CONFIG.DB_FILE_NAME);
+  if (files.hasNext()) {
+    return files.next();
+  }
+  const initialDb = {
+    version: 2,
+    engine: "Google Drive JSON Database (DriveApp)",
+    createdDate: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss'),
+    lastUpdated: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss'),
+    summaryAgents: [],
+    historicalArchive: {}, // "YYYY-MM-DD": [ agent summary rows ]
+    drills: []             // array of drill records matching agent-dashboard-viewer standard
+  };
+  return folder.createFile(CONFIG.DB_FILE_NAME, JSON.stringify(initialDb, null, 2), MimeType.PLAIN_TEXT);
+}
+
+/**
+ * قراءة كائن قاعدة البيانات بالكامل من Google Drive
+ */
+function loadDatabaseFromDrive() {
+  try {
+    const file = getOrCreateDatabaseFile();
+    const content = file.getBlob().getDataAsString();
+    if (!content || !content.trim()) {
+      return { version: 2, summaryAgents: [], historicalArchive: {}, drills: [] };
+    }
+    const db = JSON.parse(content);
+    if (!db.summaryAgents) db.summaryAgents = [];
+    if (!db.historicalArchive) db.historicalArchive = {};
+    if (!db.drills) db.drills = [];
+    return db;
+  } catch (err) {
+    console.error("Error loading database from Drive:", err);
+    return { version: 2, summaryAgents: [], historicalArchive: {}, drills: [] };
+  }
+}
+
+/**
+ * حفظ وتحديث كائن قاعدة البيانات في Google Drive
+ */
+function saveDatabaseToDrive(db) {
+  const file = getOrCreateDatabaseFile();
+  db.lastUpdated = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
+  file.setContent(JSON.stringify(db));
+  return db;
+}
+
+/**
+ * رابط مجلد قاعدة البيانات في Google Drive لفتحه في نافذة جديدة
+ */
+function getDriveFolderUrl() {
+  try {
+    const folder = getOrCreateDataFolder();
+    return folder.getUrl();
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * رابط ملف قاعدة البيانات المباشر في Google Drive
+ */
+function getDatabaseFileUrl() {
+  try {
+    const file = getOrCreateDatabaseFile();
+    return file.getUrl();
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * ============================================================================
+ * حفظ وتحديث البيانات في Google Drive مع منع التكرار وإلغاء حدود الخلايا نهائياً
+ * ============================================================================
+ */
+function savePayloadToDrive(payload) {
+  const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
+  const db = loadDatabaseFromDrive();
+
+  let summaryCount = 0;
+  let drillCount = 0;
+  let ticketsCount = 0;
+
+  // 1. معالجة وتحديث الوكلاء الملخصين (summaryAgents)
+  const incomingAgents = payload.agents || payload.summaryAgents || [];
+  if (Array.isArray(incomingAgents) && incomingAgents.length > 0) {
+    const agentMap = {};
+    (db.summaryAgents || []).forEach(a => {
+      const em = String(a.email || "").trim().toLowerCase();
+      if (em) agentMap[em] = a;
+    });
+
+    incomingAgents.forEach(a => {
+      const email = String(a.email || "").trim();
+      if (!email) return;
+      const emLower = email.toLowerCase();
+      const updatedAgent = {
+        date: dateStr,
+        name: String(a.name || email.split("@")[0]),
+        email: email,
+        csat: parseFloat(a.csat) || 0,
+        agbt: String(a.agbt || "00:00"),
+        abst: String(a.abst || "00:00"),
+        breakBreach: String(a.breakBreach || "0"),
+        lateness: parseFloat(a.lateness) || 0,
+        idle: String(a.idle || "0"),
+        productivity: String(a.productivity || "0%"),
+        updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
+      };
+      agentMap[emLower] = updatedAgent;
+    });
+
+    db.summaryAgents = Object.values(agentMap);
+    summaryCount = db.summaryAgents.length;
+
+    // حفظ نسخة في الأرشيف التاريخي لهذا اليوم
+    if (!db.historicalArchive) db.historicalArchive = {};
+    db.historicalArchive[dateStr] = JSON.parse(JSON.stringify(db.summaryAgents));
+  }
+
+  // 2. معالجة وتحديث نتائج الـ Drills التفصيلية (CSAT, AGBT, ABST, Lateness, Breaches, Idle)
+  const incomingResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : []);
+  if (Array.isArray(incomingResults) && incomingResults.length > 0) {
+    if (!db.drills) db.drills = [];
+
+    // خريطة لتحديد السجلات القائمة وتحديثها بدون تكرار (Key: date|email|metric)
+    const drillMap = {};
+    db.drills.forEach((d, idx) => {
+      const k = String(d.date || "") + "|" + String(d.agent || "").trim().toLowerCase() + "|" + String(d.metric || "").trim().toLowerCase();
+      drillMap[k] = idx;
+    });
+
+    const nowStr = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
+
+    incomingResults.forEach(res => {
+      const agent = (res.agent || "").trim();
+      const metric = (res.metric || "").trim();
+      const rows = res.rows || [];
+      if (!agent || !metric) return;
+
+      const normalized = normalizeDrillRecord(res.header || [], rows);
+      const recCount = normalized.rows.length;
+      ticketsCount += recCount;
+
+      const drillRecord = {
+        date: dateStr,
+        agent: agent,
+        metric: metric.toLowerCase(),
+        title: String(res.title || `${metric.toUpperCase()} - ${agent}`).substring(0, 200),
+        header: normalized.header,
+        rows: normalized.rows,
+        count: recCount,
+        savedAt: nowStr
+      };
+
+      const k = dateStr + "|" + agent.toLowerCase() + "|" + metric.toLowerCase();
+      if (drillMap.hasOwnProperty(k)) {
+        // تحديث السجل القائم في مكانه
+        db.drills[drillMap[k]] = drillRecord;
+      } else {
+        drillMap[k] = db.drills.length;
+        db.drills.push(drillRecord);
+      }
+      drillCount++;
+    });
+  }
+
+  // إذا لم يتوفر summaryAgents، نستخرج ملخص الوكلاء تلقائياً من الـ drills
+  if (summaryCount === 0 && db.drills.length > 0) {
+    db.summaryAgents = extractSummaryFromDrills(db.drills, dateStr);
+    summaryCount = db.summaryAgents.length;
+    if (!db.historicalArchive) db.historicalArchive = {};
+    db.historicalArchive[dateStr] = JSON.parse(JSON.stringify(db.summaryAgents));
+  }
+
+  // حفظ قاعدة البيانات بالكامل في Google Drive
+  saveDatabaseToDrive(db);
+
+  // تحديث اختياري آمن لـ Google Sheet (أرقام الملخص الإحصائي فقط دون حشر أي JSON)
+  try {
+    syncSummaryToGoogleSheetIfConfigured(db.summaryAgents, dateStr);
+  } catch (sheetErr) {
+    console.warn("Sheet summary sync skipped or failed:", sheetErr.message);
+  }
+
+  return {
+    success: true,
+    summaryCount: summaryCount,
+    drillCount: drillCount,
+    ticketsCount: ticketsCount,
+    date: dateStr
+  };
+}
+
+/**
+ * دالة مساعدة لاستخراج ملخص الوكلاء من الـ Drills إذا لم يتم إرسال جدول رئيسي
+ */
+function extractSummaryFromDrills(drills, dateStr) {
+  const agentSummaries = {};
+  drills.forEach(d => {
+    if (d.date !== dateStr) return;
+    const agent = d.agent;
+    const metric = d.metric.toLowerCase();
+    const rows = d.rows || [];
+
+    if (!agentSummaries[agent]) {
+      agentSummaries[agent] = {
+        date: dateStr,
+        name: agent.split("@")[0].replace(".", " "),
+        email: agent,
+        csat: 0,
+        agbt: "00:00",
+        abst: "00:00",
+        breakBreach: "0",
+        lateness: 0,
+        idle: "0",
+        productivity: "0%",
+        updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
+      };
+    }
+
+    if (metric === "csat") {
+      let good = 0, total = 0;
+      rows.forEach(r => {
+        const rating = String(r[1] || r[3] || "");
+        if (rating) {
+          total++;
+          if (rating.includes("5") || rating.includes("4") || rating.toLowerCase().includes("good")) good++;
+        }
+      });
+      agentSummaries[agent].csat = total > 0 ? parseFloat(((good / total) * 100).toFixed(1)) : 0;
+    } else if (metric === "lateness") {
+      let totalLate = 0;
+      rows.forEach(r => {
+        const m = parseFloat(r[3] || r[4] || r[2] || 0) || 0;
+        totalLate += m;
+      });
+      agentSummaries[agent].lateness = parseFloat(totalLate.toFixed(1));
+    } else if (metric === "breakbreach" || metric === "break") {
+      agentSummaries[agent].breakBreach = String(rows.length);
+    }
+  });
+
+  return Object.values(agentSummaries);
+}
+
+/**
+ * ============================================================================
+ * قراءة بيانات النظرة العامة للوكلاء — مباشرة من Google Drive
  * ============================================================================
  */
 function getOverviewData() {
   try {
-    const ss = getTargetSpreadsheet();
-    if (!ss) {
-      return {
-        success: false,
-        isEmpty: true,
-        agents: [],
-        summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 },
-        message: "تعذر فتح Google Sheet. يرجى التأكد من تحديد SPREADSHEET_ID أو تشغيل السكربت داخل الشيت."
-      };
-    }
+    const db = loadDatabaseFromDrive();
+    const agents = db.summaryAgents || [];
 
-    const summarySheet = ss.getSheetByName(CONFIG.SHEET_SUMMARY);
-    if (!summarySheet || summarySheet.getLastRow() <= 1) {
+    if (agents.length === 0 && (!db.drills || db.drills.length === 0)) {
       return {
         success: true,
         isEmpty: true,
         agents: [],
         summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 },
-        message: "لا توجد بيانات مسجلة في الشيت حتى الآن. افتح صفحة العمل واستخدم الإضافة للضغط على ☁️ مزامنة سريعة إلى Google Sheets."
+        message: "لا توجد بيانات مسجلة في Google Drive حتى الآن. استخدم صفحة الإدارة (Admin) للصق النتائج وحفظها."
       };
     }
 
-    const lastRow = summarySheet.getLastRow();
-    const data = summarySheet.getRange(2, 1, lastRow - 1, 11).getValues();
-
-    const agents = [];
     let totalCsat = 0, countCsat = 0;
     let totalLateness = 0;
     let latestUpdateTime = "";
 
-    data.forEach(row => {
-      const email = String(row[2] || "").trim();
-      if (!email) return;
-
-      const csatVal = parseFloat(row[3]) || 0;
-      const latenessVal = parseFloat(row[7]) || 0;
+    agents.forEach(a => {
+      const csatVal = parseFloat(a.csat) || 0;
+      const latenessVal = parseFloat(a.lateness) || 0;
       if (csatVal > 0) {
         totalCsat += csatVal;
         countCsat++;
       }
       totalLateness += latenessVal;
-
-      let dateFormatted = row[0];
-      if (row[0] instanceof Date) {
-        dateFormatted = Utilities.formatDate(row[0], 'Asia/Riyadh', 'yyyy-MM-dd');
-      }
-
-      let updatedFormatted = row[10];
-      if (row[10] instanceof Date) {
-        updatedFormatted = Utilities.formatDate(row[10], 'Asia/Riyadh', 'HH:mm');
-      }
-      if (!latestUpdateTime && updatedFormatted) {
-        latestUpdateTime = String(updatedFormatted);
-      }
-
-      agents.push({
-        date: dateFormatted,
-        name: String(row[1] || email.split("@")[0]),
-        email: email,
-        csat: csatVal,
-        agbt: String(row[4] || "00:00"),
-        abst: String(row[5] || "00:00"),
-        breakBreach: String(row[6] || "0"),
-        lateness: latenessVal,
-        idle: String(row[8] || "0"),
-        productivity: String(row[9] || "0%"),
-        updatedAt: updatedFormatted || "—"
-      });
+      if (!latestUpdateTime && a.updatedAt) latestUpdateTime = String(a.updatedAt);
     });
 
-    // قراءة عدد صفوف الـ Drills التفصيلية وحساب الاتجاهات اليومية من السجلات الحقيقية (Header + Rows JSON)
+    // حساب إجمالي صفوف التذاكر والاتجاهات التاريخية
     let totalDrillRows = 0;
-    const drillSheet = ss.getSheetByName(CONFIG.SHEET_DRILLS);
     const dailyAggregates = {};
-    if (drillSheet && drillSheet.getLastRow() > 1) {
-      const drillRows = drillSheet.getRange(2, 1, drillSheet.getLastRow() - 1, 7).getValues();
-      for (const r of drillRows) {
-        let d = r[0];
-        if (d instanceof Date) d = Utilities.formatDate(d, 'Asia/Riyadh', 'yyyy-MM-dd');
-        d = String(d || '').trim();
-        if (!d) continue;
 
-        const metric = String(r[2] || '').trim().toLowerCase();
-        let header = [];
-        let rows = [];
-        try { header = JSON.parse(r[4] || '[]'); } catch (e) { header = []; }
-        try { rows = JSON.parse(r[5] || '[]'); } catch (e) { rows = []; }
+    (db.drills || []).forEach(d => {
+      const day = d.date;
+      if (!day) return;
+      const rows = d.rows || [];
+      const header = d.header || [];
+      totalDrillRows += rows.length;
+      if (rows.length === 0) return;
 
-        if (Array.isArray(rows)) totalDrillRows += rows.length;
-        if (!Array.isArray(rows) || rows.length === 0) continue;
+      if (!dailyAggregates[day]) {
+        dailyAggregates[day] = { day: day, sessions: 0, abstSecsSum: 0, abstCount: 0, agbtSecsSum: 0, agbtCount: 0, csatGood: 0, csatBad: 0, long: 0 };
+      }
+      const agg = dailyAggregates[day];
+      const metric = String(d.metric || "").toLowerCase();
 
-        if (!dailyAggregates[d]) {
-          dailyAggregates[d] = { day: d, sessions: 0, abstSecsSum: 0, abstCount: 0, agbtSecsSum: 0, agbtCount: 0, csatGood: 0, csatBad: 0, long: 0 };
+      if (metric === 'abst') {
+        const timeIdx = findColIndex(header, 'basket_session_time_min', 'session_time', 'abst');
+        const over20Idx = findColIndex(header, '> 20', '20');
+        for (const row of rows) {
+          agg.sessions++;
+          if (over20Idx !== -1) {
+            const ov = String(row[over20Idx] || '').trim().toLowerCase();
+            if (ov === 'high' || ov === 'yes' || ov === '1' || ov === 'true') agg.long++;
+          }
+          if (timeIdx !== -1) {
+            const mins = parseFloat(row[timeIdx]);
+            if (!isNaN(mins) && mins > 0) {
+              agg.abstSecsSum += mins * 60;
+              agg.abstCount++;
+              if (mins >= 20 && over20Idx === -1) agg.long++;
+            }
+          }
         }
-        const agg = dailyAggregates[d];
-
-        if (metric === 'abst') {
-          const timeIdx = findColIndex(header, 'basket_session_time_min', 'session_time', 'abst');
-          const over20Idx = findColIndex(header, '> 20', '20');
-          for (const row of rows) {
-            agg.sessions++;
-            if (over20Idx !== -1) {
-              const ov = String(row[over20Idx] || '').trim().toLowerCase();
-              if (ov === 'high' || ov === 'yes' || ov === '1' || ov === 'true') agg.long++;
-            }
-            if (timeIdx !== -1) {
-              const mins = parseFloat(row[timeIdx]);
-              if (!isNaN(mins) && mins > 0) {
-                agg.abstSecsSum += mins * 60;
-                agg.abstCount++;
-                if (mins >= 20 && over20Idx === -1) agg.long++;
-              }
+      } else if (metric === 'agbt') {
+        const sessionIdx = findColIndex(header, 'sessions count', 'sessions');
+        const ticketIdx = findColIndex(header, 'tickets');
+        const basketIdx = findColIndex(header, 'sum_basket_time_for_ticket_per_hour_min_online_womt', 'basket_time', 'agbt');
+        for (const row of rows) {
+          let s = 1;
+          if (sessionIdx !== -1) { const v = parseInt(row[sessionIdx], 10); if (!isNaN(v) && v > 0) s = v; }
+          else if (ticketIdx !== -1) { const v = parseInt(row[ticketIdx], 10); if (!isNaN(v) && v > 0) s = v; }
+          agg.sessions += Math.max(1, s);
+          if (basketIdx !== -1) {
+            const mins = parseFloat(row[basketIdx]);
+            if (!isNaN(mins) && mins > 0) {
+              agg.agbtSecsSum += mins * 60;
+              agg.agbtCount++;
             }
           }
-        } else if (metric === 'agbt') {
-          const sessionIdx = findColIndex(header, 'sessions count', 'sessions');
-          const ticketIdx = findColIndex(header, 'tickets');
-          const basketIdx = findColIndex(header, 'sum_basket_time_for_ticket_per_hour_min_online_womt', 'basket_time', 'agbt');
-          for (const row of rows) {
-            let s = 1;
-            if (sessionIdx !== -1) { const v = parseInt(row[sessionIdx], 10); if (!isNaN(v) && v > 0) s = v; }
-            else if (ticketIdx !== -1) { const v = parseInt(row[ticketIdx], 10); if (!isNaN(v) && v > 0) s = v; }
-            agg.sessions += Math.max(1, s);
-            if (basketIdx !== -1) {
-              const mins = parseFloat(row[basketIdx]);
-              if (!isNaN(mins) && mins > 0) {
-                agg.agbtSecsSum += mins * 60;
-                agg.agbtCount++;
-              }
-            }
-          }
-        } else if (metric === 'csat') {
-          const scoreIdx = findColIndex(header, 'csat_adjusted', 'csat', 'score');
-          for (const row of rows) {
-            agg.sessions++;
-            if (scoreIdx !== -1) {
-              const sc = String(row[scoreIdx] || '').trim().toLowerCase();
-              if (sc === 'good' || sc === '5' || sc === '4' || sc === 'positive') agg.csatGood++;
-              else if (sc === 'bad' || sc === '1' || sc === '2' || sc === 'negative') agg.csatBad++;
-            }
+        }
+      } else if (metric === 'csat') {
+        const scoreIdx = findColIndex(header, 'csat_adjusted', 'csat', 'score');
+        for (const row of rows) {
+          agg.sessions++;
+          if (scoreIdx !== -1) {
+            const sc = String(row[scoreIdx] || '').trim().toLowerCase();
+            if (sc === 'good' || sc === '5' || sc === '4' || sc === 'positive') agg.csatGood++;
+            else if (sc === 'bad' || sc === '1' || sc === '2' || sc === 'negative') agg.csatBad++;
           }
         }
       }
-    }
+    });
 
-    // تحويل الأيام إلى مصفوفة نظيفة مع استبعاد الأيام بدون جلسات فعلية
     const historicalDays = Object.keys(dailyAggregates).map(k => {
       const item = dailyAggregates[k];
       const csatEval = (item.csatGood || 0) + (item.csatBad || 0);
@@ -296,89 +506,64 @@ function getOverviewData() {
       isEmpty: true,
       agents: [],
       summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 },
-      message: "حدث خطأ أثناء قراءة بيانات الشيت: " + err.message
+      message: "حدث خطأ أثناء قراءة بيانات Google Drive: " + err.message
     };
   }
 }
 
 /**
  * ============================================================================
- * قراءة البيانات التفصيلية (Drill Records) لوكيل معين ومقياس معين من الشيت
+ * قراءة البيانات التفصيلية (Drill Records) لوكيل معين ومقياس معين من Google Drive
  * ============================================================================
  */
 function getAgentDetailData(email, metric) {
   try {
-    const ss = getTargetSpreadsheet();
-    if (!ss) {
-      return { success: false, found: false, message: "تعذر فتح Google Sheet." };
-    }
+    const db = loadDatabaseFromDrive();
 
     // 1. إذا كان المطلوب "كل الوكلاء" (All Agents)
     if (!email || email === 'all' || email === '') {
-      return getAllAgentsMetricSummary(ss, metric);
+      return getAllAgentsMetricSummary(db.summaryAgents || [], metric);
     }
 
     // 2. إذا كان المطلوب وكيلاً محدداً
-    const drillSheet = ss.getSheetByName(CONFIG.SHEET_DRILLS);
-    if (!drillSheet || drillSheet.getLastRow() <= 1) {
+    const targetEmail = email.trim().toLowerCase();
+    const targetMetric = (metric || "csat").trim().toLowerCase();
+
+    const matchingDrills = (db.drills || []).filter(d => {
+      const em = String(d.agent || "").trim().toLowerCase();
+      const met = String(d.metric || "").trim().toLowerCase();
+      return em === targetEmail && met === targetMetric;
+    });
+
+    if (matchingDrills.length === 0) {
       return {
         success: true,
         found: false,
+        isAllAgents: false,
         email: email,
         metric: metric,
         header: [],
         rows: [],
         count: 0,
-        message: "لا توجد سجلات تفصيلية محفوظة في ورقة Drill_Archive حتى الآن."
+        message: `لم يتم العثور على سجلات تفصيلية لمقياس (${metric}) لهذا الوكيل. يمكنك سحبها من الإضافة ثم حفظها.`
       };
     }
 
-    const lastRow = drillSheet.getLastRow();
-    const data = drillSheet.getRange(2, 1, lastRow - 1, 7).getValues();
-
-    const targetEmail = email.trim().toLowerCase();
-    const targetMetric = (metric || "csat").trim().toLowerCase();
-
-    // البحث من الأحدث إلى الأقدم
-    for (let i = data.length - 1; i >= 0; i--) {
-      const rowEmail = String(data[i][1] || "").trim().toLowerCase();
-      const rowMetric = String(data[i][2] || "").trim().toLowerCase();
-
-      if (rowEmail === targetEmail && rowMetric === targetMetric) {
-        let header = [];
-        let rows = [];
-
-        try { header = JSON.parse(data[i][4] || "[]"); } catch (e) { header = []; }
-        try { rows = JSON.parse(data[i][5] || "[]"); } catch (e) { rows = []; }
-
-        const recCount = Array.isArray(rows) ? rows.length : 0;
-
-        return {
-          success: true,
-          found: true,
-          isAllAgents: false,
-          email: email,
-          metric: metric,
-          title: String(data[i][3] || ""),
-          header: header,
-          rows: rows,
-          count: recCount,
-          date: String(data[i][0] || ""),
-          savedAt: String(data[i][6] || "")
-        };
-      }
-    }
+    // أحدث سجل محفوظ
+    const latestDrill = matchingDrills[matchingDrills.length - 1];
 
     return {
       success: true,
-      found: false,
+      found: true,
       isAllAgents: false,
       email: email,
       metric: metric,
-      header: [],
-      rows: [],
-      count: 0,
-      message: `لم يتم العثور على سجلات تفصيلية لمقياس (${metric}) لهذا الوكيل. يمكنك سحبها من الإضافة ثم الضغط على مزامنة.`
+      title: latestDrill.title || `${metric.toUpperCase()} - ${email}`,
+      header: latestDrill.header || [],
+      rows: latestDrill.rows || [],
+      count: (latestDrill.rows || []).length,
+      date: latestDrill.date || "",
+      savedAt: latestDrill.savedAt || ""
     };
 
   } catch (err) {
@@ -391,47 +576,29 @@ function getAgentDetailData(email, metric) {
 }
 
 /**
- * دالة مساعدة لتوليد جدول مقارنة جميع الوكلاء لمقياس معين بدون تفاصيل التذاكر الفردية
- * يطابق متطلب: "إذا كنت في وضع كل الوكلاء يطلع كل الاجينت كجدول مع رقم الميركش الخاص بهم بدون أي تفاصيل"
+ * توليد جدول مقارنة جميع الوكلاء لمقياس معين بدون تفاصيل التذاكر الفردية
  */
-function getAllAgentsMetricSummary(ss, metric) {
-  const summarySheet = ss.getSheetByName(CONFIG.SHEET_SUMMARY);
-  if (!summarySheet || summarySheet.getLastRow() <= 1) {
-    return {
-      success: true,
-      found: false,
-      isAllAgents: true,
-      metric: metric,
-      header: [],
-      rows: [],
-      message: "لا توجد بيانات مسجلة في الشيت حتى الآن."
-    };
-  }
-
-  const lastRow = summarySheet.getLastRow();
-  const data = summarySheet.getRange(2, 1, lastRow - 1, 11).getValues();
+function getAllAgentsMetricSummary(agentsList, metric) {
   const m = (metric || "csat").toLowerCase();
-
   let header = ["الترتيب", "اسم الوكيل", "البريد الإلكتروني", "قيمة المقياس", "الحالة والتقييم"];
-  let metricColIdx = 3; // CSAT default
   let metricLabel = "CSAT %";
 
-  if (m === "agbt") { metricColIdx = 4; metricLabel = "AGBT (المناولة)"; }
-  else if (m === "abst") { metricColIdx = 5; metricLabel = "ABST (سرعة الرد)"; }
-  else if (m === "breakbreach" || m === "break") { metricColIdx = 6; metricLabel = "تجاوزات البريك"; }
-  else if (m === "lateness") { metricColIdx = 7; metricLabel = "دقائق التأخير"; }
-  else if (m === "idle") { metricColIdx = 8; metricLabel = "وقت الخمول"; }
-  else if (m === "productivity") { metricColIdx = 9; metricLabel = "الإنتاجية"; }
+  if (m === "agbt") metricLabel = "AGBT (المناولة)";
+  else if (m === "abst") metricLabel = "ABST (سرعة الرد)";
+  else if (m === "breakbreach" || m === "break") metricLabel = "تجاوزات البريك";
+  else if (m === "lateness") metricLabel = "دقائق التأخير";
+  else if (m === "idle") metricLabel = "وقت الخمول";
+  else if (m === "productivity") metricLabel = "الإنتاجية";
 
   header[3] = metricLabel;
 
   const rows = [];
-  data.forEach((row, idx) => {
-    const name = String(row[1] || "").trim();
-    const email = String(row[2] || "").trim();
+  (agentsList || []).forEach((row, idx) => {
+    const name = String(row.name || "").trim();
+    const email = String(row.email || "").trim();
     if (!email) return;
 
-    const val = row[metricColIdx];
+    let val = row[m] !== undefined ? row[m] : (row[metric] !== undefined ? row[metric] : "—");
     let displayVal = String(val ?? "—");
     let status = "طبيعي";
 
@@ -440,7 +607,6 @@ function getAllAgentsMetricSummary(ss, metric) {
       displayVal = num + "%";
       status = num >= 90 ? "ممتاز 🟢" : (num >= 80 ? "جيد 🟡" : "يحتاج تحسين 🔴");
     } else if (m === "abst") {
-      // ABST: كلما قل الرقم كان إيجابياً (استجابة أسرع)، وكلما زاد كان سلبياً (بطيء)
       displayVal = String(val || "—");
       let secs = 0;
       if (displayVal.includes(":")) {
@@ -492,14 +658,13 @@ function getAllAgentsMetricSummary(ss, metric) {
 
 /**
  * ============================================================================
- * حفظ وتحديث ملخص الوكلاء في Google Sheet مع منع التكرار نهائياً
+ * تحديث اختياري لـ Google Sheet (الملخص الإحصائي فقط بدون حشر أي JSON)
  * ============================================================================
  */
-function saveAgentsToSheet(agents, dateStr) {
+function syncSummaryToGoogleSheetIfConfigured(summaryAgents, dateStr) {
   const ss = getTargetSpreadsheet();
-  if (!ss) throw new Error("تعذر فتح ملف Google Sheet. تأكد من تحديد SPREADSHEET_ID أو تشغيل السكربت داخل الشيت.");
+  if (!ss) return; // لا يوجد شيت محدد أو متصل
 
-  // 1. ورقة Daily_Summary
   let summarySheet = ss.getSheetByName(CONFIG.SHEET_SUMMARY);
   if (!summarySheet) {
     summarySheet = ss.insertSheet(CONFIG.SHEET_SUMMARY);
@@ -512,50 +677,21 @@ function saveAgentsToSheet(agents, dateStr) {
     summarySheet.setFrozenRows(1);
   }
 
-  // 2. ورقة Historical_Archive
-  let archiveSheet = ss.getSheetByName(CONFIG.SHEET_ARCHIVE);
-  if (!archiveSheet) {
-    archiveSheet = ss.insertSheet(CONFIG.SHEET_ARCHIVE);
-    archiveSheet.setRightToLeft(true);
-    archiveSheet.appendRow([
-      "التاريخ", "اسم الوكيل", "البريد الإلكتروني", "CSAT %", "AGBT", "ABST", 
-      "تأخيرات البريك", "دقائق التأخير", "وقت الخمول", "الإنتاجية", "وقت التسجيل"
-    ]);
-    archiveSheet.getRange("A1:K1").setFontWeight("bold").setBackground("#0f172a").setFontColor("#38bdf8");
-    archiveSheet.setFrozenRows(1);
-  }
-
   const nowStr = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
+  const lastRow = summarySheet.getLastRow();
+  const summaryEmailMap = {};
 
-  // --- بناء فهرس السجلات الحالية في Daily_Summary لمنع التكرار ---
-  const summaryLastRow = summarySheet.getLastRow();
-  const summaryEmailMap = {}; // email -> row index (1-based)
-  if (summaryLastRow > 1) {
-    const emailsData = summarySheet.getRange(2, 3, summaryLastRow - 1, 1).getValues();
+  if (lastRow > 1) {
+    const emailsData = summarySheet.getRange(2, 3, lastRow - 1, 1).getValues();
     for (let i = 0; i < emailsData.length; i++) {
       const em = String(emailsData[i][0] || "").trim().toLowerCase();
       if (em) summaryEmailMap[em] = i + 2;
     }
   }
 
-  // --- بناء فهرس السجلات الحالية في Historical_Archive لمنع التكرار (Date + Email) ---
-  const archiveLastRow = archiveSheet.getLastRow();
-  const archiveKeyMap = {}; // "date|email" -> row index (1-based)
-  if (archiveLastRow > 1) {
-    const archiveData = archiveSheet.getRange(2, 1, archiveLastRow - 1, 3).getValues();
-    for (let i = 0; i < archiveData.length; i++) {
-      let dVal = archiveData[i][0];
-      if (dVal instanceof Date) dVal = Utilities.formatDate(dVal, 'Asia/Riyadh', 'yyyy-MM-dd');
-      else dVal = String(dVal).trim();
-      const emVal = String(archiveData[i][2] || "").trim().toLowerCase();
-      if (dVal && emVal) archiveKeyMap[dVal + "|" + emVal] = i + 2;
-    }
-  }
-
   const newSummaryRows = [];
-  const newArchiveRows = [];
 
-  agents.forEach(a => {
+  summaryAgents.forEach(a => {
     const email = String(a.email || "").trim();
     if (!email) return;
     const emLower = email.toLowerCase();
@@ -573,169 +709,36 @@ function saveAgentsToSheet(agents, dateStr) {
       nowStr
     ];
 
-    // 1. تحديث أو إضافة في Daily_Summary
     if (summaryEmailMap[emLower]) {
-      // تحديث الصف القائم في مكانه دون إضافة أي سطر مكرر
       summarySheet.getRange(summaryEmailMap[emLower], 1, 1, rowValues.length).setValues([rowValues]);
     } else {
       newSummaryRows.push(rowValues);
-      summaryEmailMap[emLower] = summaryLastRow + newSummaryRows.length;
-    }
-
-    // 2. تحديث أو إضافة في Historical_Archive
-    const archKey = dateStr + "|" + emLower;
-    if (archiveKeyMap[archKey]) {
-      // مسجل مسبقاً لهذا التاريخ -> تحديث الأرقام
-      archiveSheet.getRange(archiveKeyMap[archKey], 1, 1, rowValues.length).setValues([rowValues]);
-    } else {
-      newArchiveRows.push(rowValues);
-      archiveKeyMap[archKey] = archiveLastRow + newArchiveRows.length;
+      summaryEmailMap[emLower] = summarySheet.getLastRow() + newSummaryRows.length;
     }
   });
 
   if (newSummaryRows.length > 0) {
     summarySheet.getRange(summarySheet.getLastRow() + 1, 1, newSummaryRows.length, newSummaryRows[0].length).setValues(newSummaryRows);
   }
-  if (newArchiveRows.length > 0) {
-    archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, newArchiveRows.length, newArchiveRows[0].length).setValues(newArchiveRows);
-  }
 }
 
 /**
- * ============================================================================
- * حفظ وتحديث نتائج الـ Drills التفصيلية في ورقة Drill_Archive مع منع التكرار
- * يتم تسجيل البيانات كأعمدة وصفوف نظيفة وطبيعية تماماً (بدون تكديس JSON في الخلايا)
- * المفتاح الفريد: (التاريخ + البريد الإلكتروني + المقياس)
- * ============================================================================
- */
-function saveExtensionResultsToSheet(results, dateStr, shouldUpdateSummary) {
-  const ss = getTargetSpreadsheet();
-  if (!ss) throw new Error("تعذر فتح ملف Google Sheet. تأكد من تحديد SPREADSHEET_ID أو تشغيل السكربت داخل الشيت.");
-
-  let drillSheet = ss.getSheetByName(CONFIG.SHEET_DRILLS);
-  if (!drillSheet) {
-    drillSheet = ss.insertSheet(CONFIG.SHEET_DRILLS);
-    drillSheet.setRightToLeft(true);
-    drillSheet.appendRow([
-      "التاريخ", "البريد الإلكتروني", "المقياس", "العنوان", 
-      "ترويسة الأعمدة (JSON)", "الصفوف (JSON)", "وقت الحفظ"
-    ]);
-    drillSheet.getRange("A1:G1").setFontWeight("bold").setBackground("#0f172a").setFontColor("#38bdf8");
-    drillSheet.setFrozenRows(1);
-  }
-
-  const nowStr = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
-
-  // --- بناء فهرس السجلات الحالية في Drill_Archive لمنع التكرار ---
-  const lastRow = drillSheet.getLastRow();
-  const drillKeyMap = {}; // "date|email|metric" -> row index (1-based)
-  if (lastRow > 1) {
-    const existingDrills = drillSheet.getRange(2, 1, lastRow - 1, 3).getValues();
-    for (let i = 0; i < existingDrills.length; i++) {
-      let d = existingDrills[i][0];
-      if (d instanceof Date) d = Utilities.formatDate(d, 'Asia/Riyadh', 'yyyy-MM-dd');
-      else d = String(d).trim();
-      const em = String(existingDrills[i][1] || "").trim().toLowerCase();
-      const met = String(existingDrills[i][2] || "").trim().toLowerCase();
-      if (d && em && met) drillKeyMap[d + "|" + em + "|" + met] = i + 2;
-    }
-  }
-
-  const newDrillRows = [];
-  const agentSummaries = {};
-
-  results.forEach(res => {
-    const agent = (res.agent || "").trim();
-    const metric = (res.metric || "").trim();
-    const rows = res.rows || [];
-    if (!agent || !metric) return;
-
-    // تطبيع السجل التفصيلي (Header ثابت + Rows مصفوفة) ثم تخزينه كاملاً ليظل قابلاً للقراءة والعرض لاحقاً
-    const normalized = normalizeDrillRecord(res.header || [], rows);
-
-    const rowValues = [
-      dateStr,
-      agent,
-      metric.toUpperCase(),
-      String(res.title || `${metric.toUpperCase()} - ${agent}`).substring(0, 200),
-      JSON.stringify(normalized.header),
-      JSON.stringify(normalized.rows),
-      nowStr
-    ];
-
-    const drillKey = dateStr + "|" + agent.toLowerCase() + "|" + metric.toLowerCase();
-    if (drillKeyMap[drillKey]) {
-      // تحديث السجل القائم لنفس اليوم والوكيل والمقياس
-      drillSheet.getRange(drillKeyMap[drillKey], 1, 1, rowValues.length).setValues([rowValues]);
-    } else {
-      newDrillRows.push(rowValues);
-      drillKeyMap[drillKey] = lastRow + newDrillRows.length;
-    }
-
-    // استخراج ملخص الوكيل إذا لزم الأمر
-    if (shouldUpdateSummary) {
-      if (!agentSummaries[agent]) {
-        agentSummaries[agent] = {
-          name: agent.split("@")[0].replace(".", " "),
-          email: agent,
-          csat: 0,
-          agbt: "00:00",
-          abst: "00:00",
-          breakBreach: "0",
-          lateness: 0,
-          idle: "0",
-          productivity: "0%"
-        };
-      }
-
-      if (metric === "csat") {
-        let good = 0, total = 0;
-        rows.forEach(r => {
-          const rating = String(r[1] || r[3] || "");
-          if (rating) {
-            total++;
-            if (rating.includes("5") || rating.includes("4") || rating.toLowerCase().includes("good")) good++;
-          }
-        });
-        agentSummaries[agent].csat = total > 0 ? parseFloat(((good / total) * 100).toFixed(1)) : 0;
-      } else if (metric === "lateness") {
-        let totalLate = 0;
-        rows.forEach(r => {
-          const m = parseFloat(r[3] || r[4] || r[2] || 0) || 0;
-          totalLate += m;
-        });
-        agentSummaries[agent].lateness = parseFloat(totalLate.toFixed(1));
-      } else if (metric === "breakBreach") {
-        agentSummaries[agent].breakBreach = String(rows.length);
-      }
-    }
-  });
-
-  if (newDrillRows.length > 0) {
-    drillSheet.getRange(drillSheet.getLastRow() + 1, 1, newDrillRows.length, newDrillRows[0].length).setValues(newDrillRows);
-  }
-
-  if (shouldUpdateSummary) {
-    const summaryList = Object.values(agentSummaries);
-    if (summaryList.length > 0) {
-      saveAgentsToSheet(summaryList, dateStr);
-    }
-  }
-}
-
-/**
- * الحصول على كائن Spreadsheet النشط أو المحدد
+ * الحصول على كائن Spreadsheet النشط أو المحدد إن وجد
  */
 function getTargetSpreadsheet() {
-  if (CONFIG.SPREADSHEET_ID && CONFIG.SPREADSHEET_ID.trim() !== "" && !CONFIG.SPREADSHEET_ID.includes("YOUR_")) {
-    return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  try {
+    if (CONFIG.SPREADSHEET_ID && CONFIG.SPREADSHEET_ID.trim() !== "" && !CONFIG.SPREADSHEET_ID.includes("YOUR_")) {
+      return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    }
+    return SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    return null;
   }
-  return SpreadsheetApp.getActiveSpreadsheet();
 }
 
 /**
  * ============================================================================
- * واجهات القراءة التي تستدعيها الواجهة الأمامية (Scripts.html)
+ * دوال التوافق التي تستدعيها الواجهة الأمامية (Scripts.html)
  * ============================================================================
  */
 function getDashboardDataFromSheet() {
@@ -747,7 +750,48 @@ function getAgentDrillRowsFromSheet(email, metric) {
 }
 
 /**
- * البحث عن فهرس عمود داخل ترويسة مقروءة من السجلات (مرن تجاه الأسماء).
+ * ============================================================================
+ * دالة استيراد وحفظ البيانات المنسوخة من بوابة الأدمن مباشرة في Google Drive
+ * ============================================================================
+ */
+function importDataFromAdminPortal(rawJson, options) {
+  try {
+    options = options || { smartDates: true, updateSummary: true, updateArchive: true };
+    if (!rawJson || typeof rawJson !== 'string' || !rawJson.trim()) {
+      return { success: false, message: "لم يتم استلام أي نص JSON." };
+    }
+
+    const payload = JSON.parse(rawJson);
+    const saveResult = savePayloadToDrive(payload);
+
+    const logMsg = `استيراد إلى Google Drive: (${saveResult.summaryCount}) وكيل، و (${saveResult.drillCount}) مقياس، و (${saveResult.ticketsCount}) تذكرة لتاريخ ${saveResult.date}.`;
+    logSystemEvent("SUCCESS", "Admin Import to Drive", logMsg);
+
+    const driveFolderUrl = getDriveFolderUrl();
+
+    return {
+      success: true,
+      agentsCount: saveResult.summaryCount,
+      drillCount: saveResult.drillCount,
+      ticketsCount: saveResult.ticketsCount,
+      date: saveResult.date,
+      folderUrl: driveFolderUrl,
+      message: `تم بنجاح حفظ وتحديث البيانات في Google Drive (${saveResult.summaryCount} وكيل، ${saveResult.drillCount} مقياس، ${saveResult.ticketsCount} تذكرة)!`
+    };
+
+  } catch (err) {
+    logSystemEvent("ERROR", "Admin Import Failed", err.message);
+    return {
+      success: false,
+      message: err.message
+    };
+  }
+}
+
+/**
+ * ============================================================================
+ * أدوات مساعدة وتطبيع البيانات
+ * ============================================================================
  */
 function findColIndex(headers, ...candidates) {
   if (!Array.isArray(headers)) return -1;
@@ -765,11 +809,6 @@ function textCell(v) {
   return typeof v === 'object' ? JSON.stringify(v) : String(v);
 }
 
-/**
- * توحيد شكل السجل التفصيلي القادم من الإضافة قبل تخزينه:
- * - تحويل الترويسة متعددة المستويات إلى ترويسة مسطحة واحدة.
- * - تحويل الصفوف الكائنية إلى مصفوفات بناءً على أسماء الأعمدة.
- */
 function normalizeDrillRecord(header, rows) {
   const flatHeader = (function () {
     if (!Array.isArray(header)) return [];
@@ -798,9 +837,6 @@ function normalizeDrillRecord(header, rows) {
   return { header: flatHeader, rows: flatRows, width: flatHeader.length };
 }
 
-/**
- * تسجيل سجلات أحداث النظام في الشيت
- */
 function logSystemEvent(type, action, details) {
   try {
     const ss = getTargetSpreadsheet();
@@ -821,16 +857,10 @@ function logSystemEvent(type, action, details) {
   }
 }
 
-/**
- * مساعدة لتضمين ملفات HTML الفرعية (Styles, Scripts) داخل Index.html
- */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-/**
-  * الحصول على رابط Google Sheet لفتحه من المتصفح
-  */
 function getSpreadsheetUrl() {
   try {
     const ss = getTargetSpreadsheet();
@@ -839,62 +869,3 @@ function getSpreadsheetUrl() {
     return "";
   }
 }
-
-/**
- * دالة استيراد وحفظ البيانات المنسوخة من بوابة الأدمن
- */
-function importDataFromAdminPortal(rawJson, options) {
-  try {
-    options = options || { smartDates: true, updateSummary: true, updateArchive: true };
-    if (!rawJson || typeof rawJson !== 'string' || !rawJson.trim()) {
-      return { success: false, message: "لم يتم استلام أي نص JSON." };
-    }
-
-    const payload = JSON.parse(rawJson);
-    const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
-    let summaryCount = 0;
-    let drillCount = 0;
-    let ticketsCount = 0;
-
-    // 1. استخراج وحفظ الوكلاء الملخصين
-    const agentsList = payload.agents || payload.summaryAgents || (Array.isArray(payload) && payload[0]?.email && !payload[0]?.metric ? payload : null);
-    if (agentsList && Array.isArray(agentsList) && agentsList.length > 0 && options.updateSummary !== false) {
-      saveAgentsToSheet(agentsList, dateStr);
-      summaryCount = agentsList.length;
-    }
-
-    // 2. استخراج وحفظ مقاييس الـ Drills التفصيلية
-    const results = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : null);
-    if (results && Array.isArray(results) && results.length > 0) {
-      saveExtensionResultsToSheet(results, dateStr, summaryCount === 0);
-      drillCount = results.length;
-      results.forEach(r => {
-        if (r.rows && Array.isArray(r.rows)) ticketsCount += r.rows.length;
-      });
-
-      if (summaryCount === 0) {
-        summaryCount = new Set(results.map(r => r.agent).filter(Boolean)).size;
-      }
-    }
-
-    const logMsg = `استيراد من بوابة الأدمن: (${summaryCount}) وكيل، و (${drillCount}) مقياس، و (${ticketsCount}) تذكرة لتاريخ ${dateStr}.`;
-    logSystemEvent("SUCCESS", "Admin Portal Import", logMsg);
-
-    return {
-      success: true,
-      agentsCount: summaryCount,
-      drillCount: drillCount,
-      ticketsCount: ticketsCount,
-      date: dateStr,
-      message: `تم بنجاح حفظ وتحديث البيانات في Google Sheet!`
-    };
-
-  } catch (err) {
-    logSystemEvent("ERROR", "Admin Portal Failed", err.message);
-    return {
-      success: false,
-      message: err.message
-    };
-  }
-}
-

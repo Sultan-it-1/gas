@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بوابة الإدارة — استيراد وحفظ البيانات | Agent Dashboard</title>
+    <title>بوابة الإدارة — قاعدة بيانات Google Drive | Agent Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -47,7 +47,7 @@
 
         .admin-container {
             width: 100%;
-            max-width: 920px;
+            max-width: 940px;
             display: flex;
             flex-direction: column;
             gap: 20px;
@@ -93,6 +93,7 @@
         .header-actions {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .btn-link {
@@ -394,15 +395,18 @@
     <header class="admin-header">
         <div class="header-title-wrap">
             <h1>
-                🔑 بوابة الإدارة واستيراد البيانات
-                <span class="badge">Direct Sheet Sync</span>
+                🔑 بوابة الإدارة — قاعدة بيانات Google Drive
+                <span class="badge">DriveApp Database</span>
             </h1>
-            <p>لصق نتائج الإضافة وحفظها مباشرة في Google Sheet مع منع التكرار وإعادة التراكم</p>
+            <p>حفظ نتائج الإضافة مباشرة في مجلد Google Drive بدون قيود وبسرعة فائقة مع منع التكرار</p>
         </div>
         <div class="header-actions">
             <a href="?page=dashboard" class="btn-link" id="btnGoDashboard">
                 <span>📈 لوحة التحكم</span>
             </a>
+            <button type="button" class="btn-link" id="btnOpenDriveFolder" style="border-color: rgba(56, 189, 248, 0.4); color: var(--primary);">
+                <span>📁 فتح مجلد Google Drive</span>
+            </button>
             <button type="button" class="btn-link" id="btnOpenSheet">
                 <span>📊 فتح الشيت</span>
             </button>
@@ -452,24 +456,24 @@
                 <input type="checkbox" id="chkSmartDates" checked>
                 <strong>فرز التذاكر حسب تاريخ كل تذكرة الفعلي (منع تكرار الأيام التراكمية)</strong>
             </label>
-            <p class="option-desc">إذا كانت التذاكر تحتوي على أيام سابقة متراكمة، سيقوم السكربت بتوزيع كل تذكرة على يومها الحقيقي دون تكرار أو تضخيم للأرقام.</p>
+            <p class="option-desc">يتم توزيع كل تذكرة على يومها الحقيقي دون تكرار أو تضخيم للأرقام.</p>
+
+            <label class="option-label" style="margin-top:6px;">
+                <input type="checkbox" id="chkDriveStorage" checked disabled>
+                <strong>تخزين كامل البيانات في Google Drive (بدون حدود لخلايا الجداول)</strong>
+            </label>
+            <p class="option-desc">يتم حفظ كافة التذاكر والـ Drills داخل مجلد <code>Agent_Performance_Hub_Data</code> في درايف الشركة بلمح البصر.</p>
 
             <label class="option-label" style="margin-top:6px;">
                 <input type="checkbox" id="chkUpdateSummary" checked>
-                <strong>تحديث جدول ملخص اليوم (Daily_Summary)</strong>
+                <strong>تحديث جدول الملخص في Google Sheet (اختياري للإدارة)</strong>
             </label>
-            <p class="option-desc">تحديث أحدث حالة لأداء الوكلاء في ورقة ملخص اليوم دون زيادة عدد الصفوف.</p>
-
-            <label class="option-label" style="margin-top:6px;">
-                <input type="checkbox" id="chkUpdateArchive" checked>
-                <strong>حفظ وتحديث الأرشيف التاريخي (Historical_Archive)</strong>
-            </label>
-            <p class="option-desc">حفظ الأيام في الأرشيف مع تحديث الأيام القائمة في مكانها بقاعدة منع التكرار.</p>
+            <p class="option-desc">تحديث أرقام الملخص العام النظيفة فقط في الشيت دون تكديس أي نصوص أو تذاكر في الخلايا.</p>
         </div>
 
         <!-- Action Button -->
         <button type="button" class="btn-submit" id="btnSaveToSheet">
-            <span>💾 حفظ ومزامنة البيانات في Google Sheet</span>
+            <span>💾 حفظ ومزامنة البيانات في Google Drive</span>
         </button>
 
         <!-- Status Result -->
@@ -499,8 +503,8 @@
             <div class="step-item">
                 <div class="step-num">3</div>
                 <div class="step-text">
-                    <h4>الحفظ المباشر</h4>
-                    <p>اضغط زر <strong>(حفظ ومزامنة)</strong>، وسيتولى السكربت الفرز ومنع التكرار والحفظ في الشيت فوراً!</p>
+                    <h4>الحفظ المباشر في درايف</h4>
+                    <p>اضغط زر <strong>(حفظ ومزامنة)</strong>، وسيقوم السكربت بحفظها فوراً في مجلد Google Drive دون أي قيود على عدد التذاكر!</p>
                 </div>
             </div>
         </div>
@@ -580,7 +584,7 @@
                 agentsCount = uniqueEm.size;
             }
 
-            updatePreview(agentsCount, drillsCount, ticketsCount, 'صيغة صحيحة وجاهزة ✓', '#34d399');
+            updatePreview(agentsCount, drillsCount, ticketsCount, 'صيغة صحيحة وجاهزة للحفظ في Drive ✓', '#34d399');
             btnSave.disabled = false;
         } catch (e) {
             parsedPayload = null;
@@ -598,7 +602,7 @@
         st.style.color = statusColor;
     }
 
-    // Save to Google Sheet
+    // Save to Google Drive
     btnSave.addEventListener('click', () => {
         const text = jsonInput.value.trim();
         if (!text) {
@@ -613,12 +617,11 @@
 
         const options = {
             smartDates: el('chkSmartDates').checked,
-            updateSummary: el('chkUpdateSummary').checked,
-            updateArchive: el('chkUpdateArchive').checked
+            updateSummary: el('chkUpdateSummary').checked
         };
 
         btnSave.disabled = true;
-        showStatus('loading', '⏳ جاري فحص وفرز التذاكر وإرسالها مباشرة إلى Google Sheet...\nيرجى الانتظار بضع ثوانٍ...');
+        showStatus('loading', '⏳ جاري إرسال وحفظ البيانات مباشرة في مجلد Google Drive الخاص بك...\nيرجى الانتظار بضع ثوانٍ...');
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
             google.script.run
@@ -633,6 +636,7 @@
                     agentsCount: el('prevAgentsCount').textContent,
                     drillCount: el('prevDrillsCount').textContent,
                     ticketsCount: el('prevTicketsCount').textContent,
+                    folderUrl: 'https://drive.google.com',
                     message: 'تمت المحاكاة بنجاح في وضع المعاينة المحلي!'
                 });
             }, 1000);
@@ -642,27 +646,46 @@
     function handleSaveSuccess(res) {
         btnSave.disabled = false;
         if (res && res.success) {
-            const msg = `🎉 تم بنجاح الحفظ والتحديث في Google Sheet!\n\n` +
+            let folderLinkText = '';
+            if (res.folderUrl) {
+                folderLinkText = `\n📁 مسار المجلد: Agent_Performance_Hub_Data\n`;
+            }
+            const msg = `🎉 تم بنجاح الحفظ والتحديث في قاعدة بيانات Google Drive!\n\n` +
                         `• تم تحديث بيانات: (${res.agentsCount || 0}) وكيلاً.\n` +
                         `• تم فحص وحفظ: (${res.drillCount || 0}) مقياساً تفصيلياً.\n` +
                         `• إجمالي التذاكر المسجلة بالأرشيف: (${res.ticketsCount || 0}) تذكرة.\n` +
-                        `• حالة التكرار: تم استبعاد التكرارات التاريخية بنجاح ✓\n\n` +
+                        `• حالة الحدود: لا توجد قيود على حجم البيانات (مخزنة في Drive).\n` +
+                        folderLinkText + `\n` +
                         `يمكنك الآن فتح لوحة التحكم الرئيسية لمشاهدة كافة الرسوم البيانية والأرقام محدثة فوراً!`;
             showStatus('success', msg);
         } else {
-            showStatus('error', '❌ ' + (res?.message || 'تعذر حفظ البيانات في Google Sheet.'));
+            showStatus('error', '❌ ' + (res?.message || 'تعذر حفظ البيانات في Google Drive.'));
         }
     }
 
     function handleSaveError(err) {
         btnSave.disabled = false;
-        showStatus('error', '❌ حدث خطأ أثناء الحفظ في الشيت: ' + err.message);
+        showStatus('error', '❌ حدث خطأ أثناء الحفظ في Google Drive: ' + err.message);
     }
 
     function showStatus(type, message) {
         statusBox.className = type;
         statusBox.textContent = message;
     }
+
+    // Open Google Drive folder button
+    el('btnOpenDriveFolder').addEventListener('click', () => {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(url => {
+                    if (url) window.open(url, '_blank');
+                    else alert('تعذر العثور على المجلد، سيتم إنشاؤه تلقائياً عند أول عملية حفظ.');
+                })
+                .getDriveFolderUrl();
+        } else {
+            alert('في السكربت المنشور، سينقلك هذا الزر إلى مجلد Agent_Performance_Hub_Data في درايف مباشرة.');
+        }
+    });
 
     // Open sheet button
     el('btnOpenSheet').addEventListener('click', () => {
