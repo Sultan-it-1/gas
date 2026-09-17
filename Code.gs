@@ -2,11 +2,17 @@
  * ============================================================================
  * AGENT PERFORMANCE HUB - GRANULAR MICRO-PARTITIONED DRIVE BACKEND
  * ============================================================================
- * معمارية التجزئة الدقيقة فائقة السرعة (Granular Micro-Partitioned Storage):
- * 1. الشاشة الرئيسية: ملف مستقل وخفيف جداً (summary_overview.json < 10KB) + كاش الذاكرة (CacheService).
- * 2. تذاكر الوكلاء: كل مقياس (CSAT, AGBT, ABST, Lateness...) لكل موظف يُحفظ في ملف JSON مستقل ومعزول تماماً!
- *    مثال: drills/agent_ahmed_csat.json, drills/agent_ahmed_agbt.json
- * 3. استرجاع فوري: عند طلب CSAT للوكيل، يُقرأ ملف الـ CSAT فقط الخاص به، دون تحميل باقي المقاييس أو بقية الموظفين!
+ * مبني بالكامل على الخوارزميات المعتمدة والدقيقة من agent-dashboard-data.js:
+ * 1. معالجة وتطبيع دقيقة لكافة أنواع البيانات والهيدرات ثنائية الأبعاد (Multi-level headers).
+ * 2. حسابات دقيقة 100% لمؤشرات الأداء:
+ *    - CSAT: استخراج عمود csat_adjusted / score وفحص التقييمات الإيجابية والسلبية بدقة.
+ *    - Break Breaches: فحص حصري لأعمدة break exceed (Not Met / دقائق التجاوز) وفصلها تماماً عن التأخير.
+ *    - Lateness: فحص حصري لـ exceed mins أو فارق التوقيت بين بداية الوردية الفعلية والمخططة.
+ *    - AGBT & ABST: حساب متوسط أوقات المناولة والجلسات الطويلة (أكبر من 20 دقيقة).
+ *    - Daily Timeline: استخراج التاريخ اليومي الفعلي لكل صف وبناء مؤشرات كل يوم تلقائياً.
+ * 3. منع التكرار الذكي (Deduplication): اعتماد خوارزمية rowKey و alignRowColumns.
+ * 4. التجزئة الدقيقة في Google Drive: كل مقياس لكل موظف في ملف مستقل (drills/agent_{email}_{metric}.json).
+ * 5. استجابة فائقة السرعة للشاشة الرئيسية عبر summary_overview.json وكاش الذاكرة (CacheService).
  * ============================================================================
  */
 
@@ -27,9 +33,790 @@ const CONFIG = {
   SHEET_LOGS: "System_Logs"
 };
 
+const METRICS_NAMES = {
+  csat: 'CSAT',
+  agbt: 'AGBT',
+  abst: 'ABST',
+  idle: 'Idle',
+  breakBreach: 'Break breach',
+  lateness: 'Lateness',
+  productivity: 'Productivity'
+};
+
 /**
  * ============================================================================
- * دالة تخديم الواجهة (Web App)
+ * 1. دوال معالجة وتطبيع البيانات النقية (Pure Data Normalization & Calculations)
+ *    مأخوذة ومطابقة بالكامل لـ agent-dashboard-data.js
+ * ============================================================================
+ */
+
+function textCell(value) {
+  if (value === null || value === undefined) return '';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+function findColIndex(headers, ...candidates) {
+  if (!Array.isArray(headers)) return -1;
+  const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+  for (const candidate of candidates) {
+    const target = candidate.toLowerCase();
+    const idx = lowerHeaders.findIndex(h => h === target || h.includes(target));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function extractRowDate(row, header) {
+  if (!row || !header) return null;
+  const h = header.map(c => String(c).toLowerCase().trim());
+  const priorityNames = [
+    'day',
+    'report_dt',
+    'ticket_creation_date',
+    'date_resolved_dubai',
+    'created_at_dubai',
+    'csat_submitted_at_dubai',
+    'shift_date',
+    'plan_shift_start',
+    'fact_shift_start',
+    'call_start_date',
+    'date'
+  ];
+  for (const name of priorityNames) {
+    const idx = h.findIndex(c => c === name || c.includes(name));
+    if (idx !== -1 && row[idx]) {
+      const str = String(row[idx]).trim();
+      const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
+      if (m) return m[0];
+      const dmy = str.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
+      if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+      }
+      const dt = new Date(str);
+      if (!isNaN(dt.getTime()) && dt.getFullYear() > 2000) {
+        return dt.toISOString().slice(0, 10);
+      }
+    }
+  }
+  for (let idx = 0; idx < h.length; idx++) {
+    const col = h[idx];
+    if (col.includes('date') || col.includes('day') || col.includes('dt') || col.includes('time') || col.includes('start')) {
+      const str = String(row[idx] || '').trim();
+      const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
+      if (m) return m[0];
+    }
+  }
+  return null;
+}
+
+/**
+ * تطبيع سجلات المقاييس ومعالجة الهيدرات متعددة المستويات
+ */
+function normalizeRecord(result, index, fileName) {
+  if (!result || typeof result !== 'object') {
+    throw new Error(`النتيجة ${index + 1}: تنسيق غير صالح للكائن.`);
+  }
+
+  const agent = String(result.agent || result.email || '').trim();
+  const metric = String(result.metric || '').trim().toLowerCase();
+  const rawHeader = Array.isArray(result.header) ? result.header : [];
+  const rawRows = Array.isArray(result.rows) ? result.rows : [];
+
+  if (!agent || !metric) {
+    throw new Error(`النتيجة ${index + 1}: يلزم وجود agent و metric بتنسيق صحيح.`);
+  }
+
+  // معالجة الهيدرات المتعددة (DOM fallback vs Flat)
+  const levels = rawHeader.some(Array.isArray)
+    ? rawHeader.map(lvl => Array.isArray(lvl) ? lvl : [lvl])
+    : [rawHeader];
+
+  let width = levels.reduce((max, lvl) => Math.max(max, lvl.length), 0);
+  const objectKeys = [];
+  for (const row of rawRows) {
+    if (Array.isArray(row)) {
+      width = Math.max(width, row.length);
+    } else if (row && typeof row === 'object') {
+      for (const key of Object.keys(row)) {
+        if (!objectKeys.includes(key)) objectKeys.push(key);
+      }
+    }
+  }
+  width = Math.max(width, objectKeys.length);
+
+  const header = Array.from({ length: width }, (_, col) => {
+    const names = levels.map(lvl => textCell(lvl[col])).filter(Boolean);
+    return [...new Set(names)].join(' / ') || objectKeys[col] || `Column ${col + 1}`;
+  });
+
+  const rows = rawRows.map(row => Array.from({ length: width }, (_, col) => {
+    if (Array.isArray(row)) return textCell(row[col]);
+    if (row && typeof row === 'object') {
+      const key = Object.prototype.hasOwnProperty.call(row, header[col]) ? header[col] : objectKeys[col];
+      return textCell(row[key]);
+    }
+    return '';
+  }));
+
+  return {
+    agent: agent,
+    metric: metric,
+    title: textCell(result.title || `${metric.toUpperCase()} - ${agent}`),
+    capturedAt: textCell(result.capturedAt || ''),
+    source: textCell(result.source || ''),
+    scope: textCell(result.scope || result.note || ''),
+    fileName: fileName || 'DATA',
+    index: index || 0,
+    header: header,
+    rows: rows
+  };
+}
+
+/**
+ * توليد مفتاح فريد للصف لمنع التكرار (Deduplication)
+ */
+function rowKey(row, header) {
+  if (!Array.isArray(row) || !Array.isArray(header)) return '';
+  let ticketIdIdx = -1;
+  let dateIdx = -1;
+  let planShiftIdx = -1;
+
+  for (let i = 0; i < header.length; i++) {
+    const h = String(header[i]).toLowerCase().trim();
+    if (h === 'ticket_id' || h === 'ticket id' || h === 'session_id' || h === 'session id') {
+      ticketIdIdx = i;
+    } else if (h === 'report_dt' || h === 'date') {
+      dateIdx = i;
+    } else if (h === 'plan_shift_start' || h === 'fact_shift_start') {
+      planShiftIdx = i;
+    }
+  }
+
+  if (ticketIdIdx !== -1 && row[ticketIdIdx] != null) {
+    const idVal = String(row[ticketIdIdx]).trim();
+    if (idVal) {
+      if (dateIdx !== -1 && row[dateIdx] != null) {
+        const dtVal = String(row[dateIdx]).trim();
+        if (dtVal) return `dt_id::${dtVal}::${idVal}`;
+      }
+      return `id::${idVal}`;
+    }
+  }
+
+  if (planShiftIdx !== -1 && row[planShiftIdx] != null && String(row[planShiftIdx]).trim()) {
+    const shiftVal = String(row[planShiftIdx]).trim();
+    const dateVal = dateIdx !== -1 && row[dateIdx] != null ? String(row[dateIdx]).trim() : '';
+    return `shift::${shiftVal}::${dateVal}`;
+  }
+
+  return 'row::' + row.map(cell => textCell(cell).trim()).join('\u0000');
+}
+
+/**
+ * محاذاة الأعمدة عند الدمج
+ */
+function alignRowColumns(sourceRow, sourceHeader, targetHeader) {
+  if (!Array.isArray(sourceRow)) return [];
+  if (sourceHeader.length === targetHeader.length && sourceHeader.every((h, i) => h === targetHeader[i])) {
+    return sourceRow;
+  }
+  const usedIndices = new Set();
+  const colMap = targetHeader.map((tCol, tIdx) => {
+    if (sourceHeader[tIdx] === tCol && !usedIndices.has(tIdx)) {
+      usedIndices.add(tIdx);
+      return tIdx;
+    }
+    const matchIdx = sourceHeader.findIndex((sCol, sIdx) => sCol === tCol && !usedIndices.has(sIdx));
+    if (matchIdx !== -1) {
+      usedIndices.add(matchIdx);
+      return matchIdx;
+    }
+    return -1;
+  });
+
+  return targetHeader.map((_, i) => {
+    const src = colMap[i];
+    return src !== -1 && src < sourceRow.length ? sourceRow[src] : '';
+  });
+}
+
+/**
+ * دمج السجلات الواردة مع السجلات الحالية مع منع التكرار
+ */
+function mergeRecords(existingRecords = [], incomingRecords = []) {
+  const records = existingRecords.map(r => ({
+    ...r,
+    header: [...r.header],
+    rows: r.rows.map(row => [...row])
+  }));
+
+  let totalAdded = 0;
+  let totalSkipped = 0;
+  const addedDetails = [];
+
+  for (const incoming of incomingRecords) {
+    if (!incoming || !incoming.agent || !incoming.metric) continue;
+
+    const incomingAgent = String(incoming.agent).trim().toLowerCase();
+    const incomingMetric = String(incoming.metric).trim().toLowerCase();
+    const target = records.find(r => 
+      String(r.agent).trim().toLowerCase() === incomingAgent && 
+      String(r.metric).trim().toLowerCase() === incomingMetric
+    );
+
+    if (!target) {
+      const newRecord = {
+        ...incoming,
+        header: [...incoming.header],
+        rows: incoming.rows.map(row => [...row])
+      };
+      records.push(newRecord);
+      totalAdded += newRecord.rows.length;
+      addedDetails.push({
+        agent: incoming.agent,
+        metric: incoming.metric,
+        added: newRecord.rows.length,
+        skipped: 0,
+        isNewRecord: true
+      });
+    } else {
+      const existingKeys = new Set(target.rows.map(r => rowKey(r, target.header)));
+      let addedCount = 0;
+      let skippedCount = 0;
+
+      for (const row of incoming.rows) {
+        const alignedRow = alignRowColumns(row, incoming.header, target.header);
+        const key = rowKey(alignedRow, target.header);
+        if (existingKeys.has(key)) {
+          skippedCount++;
+        } else {
+          existingKeys.add(key);
+          target.rows.push(alignedRow);
+          addedCount++;
+        }
+      }
+
+      totalAdded += addedCount;
+      totalSkipped += skippedCount;
+      addedDetails.push({
+        agent: incoming.agent,
+        metric: incoming.metric,
+        added: addedCount,
+        skipped: skippedCount,
+        isNewRecord: false
+      });
+    }
+  }
+
+  return {
+    records,
+    totalAdded,
+    totalSkipped,
+    addedDetails
+  };
+}
+
+/**
+ * استخراج إحصائيات تجاوزات البريك بدقة تامة وبفصل تام عن التأخير
+ */
+function extractBreakMetrics(recordsList) {
+  let breakBreachCount = 0;
+  let breakExceedMinsSum = 0;
+  let recordedShifts = 0;
+
+  const breakRecs = recordsList.filter(r => r.metric === 'breakBreach' || r.metric === 'breakbreach' || r.metric === 'break');
+  for (const rec of breakRecs) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    const breakCols = [];
+    h.forEach((col, idx) => {
+      if (col === 'break exceed' || col === 'break_exceed') {
+        breakCols.push(idx);
+      }
+    });
+
+    for (const row of rec.rows || []) {
+      recordedShifts++;
+      let isBreakBreached = false;
+      let rowBreakExceed = 0;
+      for (const bIdx of breakCols) {
+        const val = String(row[bIdx] ?? '').trim();
+        const lower = val.toLowerCase();
+        if (lower === 'not met' || lower === 'breached' || lower.includes('breach')) {
+          isBreakBreached = true;
+        }
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed) && parsed > 0) {
+          rowBreakExceed = Math.max(rowBreakExceed, parsed);
+          isBreakBreached = true;
+        }
+      }
+      if (isBreakBreached) {
+        breakBreachCount++;
+        breakExceedMinsSum += rowBreakExceed;
+      }
+    }
+  }
+
+  return {
+    breaches: breakBreachCount,
+    exceedMins: Math.round(breakExceedMinsSum * 100) / 100,
+    recordedShifts
+  };
+}
+
+/**
+ * استخراج إحصائيات دقائق التأخير بدقة تامة
+ */
+function extractLatenessMetrics(recordsList) {
+  let latenessIncidentCount = 0;
+  let latenessMinsSum = 0;
+  let recordedShifts = 0;
+
+  const latenessRecs = recordsList.filter(r => r.metric === 'lateness');
+  const targetRecs = latenessRecs.length > 0
+    ? latenessRecs
+    : recordsList.filter(r => (r.header || []).some(c => {
+        const norm = String(c).toLowerCase().trim();
+        return norm === 'exceed mins' || norm === 'exceed_mins';
+      }));
+
+  const seenRows = new Set();
+  for (const rec of targetRecs) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    let latenessMinsIdx = -1;
+    let planStartIdx = -1;
+    let factStartIdx = -1;
+
+    h.forEach((col, idx) => {
+      if (col === 'exceed mins' || col === 'exceed_mins') {
+        latenessMinsIdx = idx;
+      } else if (col === 'plan_shift_start') {
+        planStartIdx = idx;
+      } else if (col === 'fact_shift_start') {
+        factStartIdx = idx;
+      }
+    });
+
+    for (const row of rec.rows || []) {
+      const rKey = (rec.agent || '') + '|' + (row.join('|'));
+      if (seenRows.has(rKey)) continue;
+      seenRows.add(rKey);
+      recordedShifts++;
+
+      let isLate = false;
+      let rowLateMins = 0;
+      if (latenessMinsIdx !== -1) {
+        const m = parseFloat(row[latenessMinsIdx]);
+        if (!isNaN(m) && m > 0) {
+          rowLateMins = m;
+          isLate = true;
+        }
+      } else if (planStartIdx !== -1 && factStartIdx !== -1) {
+        const p = new Date(row[planStartIdx]).getTime();
+        const f = new Date(row[factStartIdx]).getTime();
+        if (f > p) {
+          const diff = Math.round((f - p) / 60000);
+          if (diff > 0) {
+            rowLateMins = diff;
+            isLate = true;
+          }
+        }
+      }
+      if (isLate) {
+        latenessIncidentCount++;
+        latenessMinsSum += rowLateMins;
+      }
+    }
+  }
+
+  return {
+    incidents: latenessIncidentCount,
+    totalMins: Math.round(latenessMinsSum * 100) / 100,
+    recordedShifts
+  };
+}
+
+/**
+ * المحرك الإحصائي الشامل لحساب كافة المقاييس (طِبق الأصل من agent-dashboard-data.js)
+ */
+function calculateAnalytics(records, agentFilter = null) {
+  if (!Array.isArray(records) || !records.length) {
+    return {
+      totalRecords: 0,
+      totalRows: 0,
+      totalSessions: 0,
+      totalLongSessions: 0,
+      activeDays: 0,
+      avgDailySessions: 0,
+      uniqueAgents: [],
+      metricCounts: {},
+      csat: { total: 0, good: 0, bad: 0, pct: null, byCountry: { KSA: 0, UAE: 0, OTHER: 0 }, byChannel: {} },
+      agbt: { avg: null, tickets: 0, basketHours: 0 },
+      abst: { avg: null },
+      breakBreach: { breaches: 0, met: 0, exceedMins: 0, recordedShifts: 0 },
+      lateness: { incidents: 0, totalMins: 0, recordedShifts: 0 },
+      idle: { avgHours: null, totalHours: 0 },
+      agentStats: {},
+      timeline: []
+    };
+  }
+
+  const list = agentFilter ? records.filter(r => r.agent === agentFilter) : records;
+  const totalRecords = list.length;
+  const totalRows = list.reduce((sum, r) => sum + (Array.isArray(r.rows) ? r.rows.length : 0), 0);
+  const uniqueAgents = [...new Set(records.map(r => r.agent))].sort();
+
+  const metricCounts = {};
+  for (const r of list) {
+    metricCounts[r.metric] = (metricCounts[r.metric] || 0) + (r.rows ? r.rows.length : 0);
+  }
+
+  // 1. حساب CSAT
+  let csatTotal = 0, csatGood = 0, csatBad = 0;
+  const csatByCountry = { KSA: 0, UAE: 0, OTHER: 0 };
+  const csatByChannel = {};
+  const csatRecords = list.filter(r => r.metric === 'csat');
+
+  for (const rec of csatRecords) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    const csatColIdx = h.findIndex(col => col.includes('csat_adjusted') || col === 'csat' || col.includes('score'));
+    const countryColIdx = h.findIndex(col => col.includes('country'));
+    const channelColIdx = h.findIndex(col => col.includes('channel'));
+
+    for (const row of rec.rows || []) {
+      csatTotal++;
+      const val = csatColIdx !== -1 ? String(row[csatColIdx] || '').toLowerCase().trim() : '';
+      if (val === 'good' || val === '5' || val === '4' || val === 'positive' || val.includes('ممتاز') || val.includes('جيد')) {
+        csatGood++;
+      } else if (val === 'bad' || val === '1' || val === '2' || val === 'negative' || val.includes('سيء')) {
+        csatBad++;
+      }
+
+      if (countryColIdx !== -1) {
+        const cVal = String(row[countryColIdx] || '').toUpperCase().trim();
+        if (cVal === 'KSA') csatByCountry.KSA++;
+        else if (cVal === 'UAE') csatByCountry.UAE++;
+        else if (cVal) csatByCountry.OTHER++;
+      }
+
+      if (channelColIdx !== -1) {
+        const chVal = String(row[channelColIdx] || '').toLowerCase().trim();
+        if (chVal) csatByChannel[chVal] = (csatByChannel[chVal] || 0) + 1;
+      }
+    }
+  }
+  const csatEvaluated = csatGood + csatBad;
+  const csatPct = csatEvaluated > 0 ? Math.round((csatGood / csatEvaluated) * 100 * 10) / 10 : (csatTotal > 0 && csatGood > 0 ? 100 : null);
+
+  // 2. حساب AGBT
+  let agbtSum = 0, agbtCount = 0, agbtTickets = 0, agbtBasketHours = 0;
+  const agbtRecords = list.filter(r => r.metric === 'agbt');
+
+  for (const rec of agbtRecords) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    const agbtColIdx = h.findIndex(col => col === 'agbt' || col.includes('agbt'));
+    const ticketsColIdx = h.findIndex(col => col === 'tickets' || col.includes('ticket'));
+    const basketColIdx = h.findIndex(col => col.includes('basket_time'));
+
+    for (const row of rec.rows || []) {
+      if (agbtColIdx !== -1) {
+        const val = parseFloat(row[agbtColIdx]);
+        if (!isNaN(val)) {
+          agbtSum += val;
+          agbtCount++;
+        }
+      }
+      if (ticketsColIdx !== -1) {
+        const t = parseFloat(row[ticketsColIdx]);
+        if (!isNaN(t)) agbtTickets += t;
+      }
+      if (basketColIdx !== -1) {
+        const b = parseFloat(row[basketColIdx]);
+        if (!isNaN(b)) agbtBasketHours += b;
+      }
+    }
+  }
+  const agbtAvg = agbtCount > 0 ? Math.round((agbtSum / agbtCount) * 100) / 100 : null;
+
+  // 3. حساب تجاوزات البريك ودقائق التأخير
+  const overallBreak = extractBreakMetrics(list);
+  const overallLateness = extractLatenessMetrics(list);
+
+  // 4. حساب وقت الخمول (Idle Time)
+  let idleHoursSum = 0, idleCount = 0;
+  const idleRecords = list.filter(r => r.metric === 'idle');
+
+  for (const rec of idleRecords) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    const idleColIdx = h.findIndex(col => col.includes('idle') || col.includes('not_working'));
+
+    for (const row of rec.rows || []) {
+      if (idleColIdx !== -1) {
+        const val = parseFloat(row[idleColIdx]);
+        if (!isNaN(val)) {
+          idleHoursSum += val;
+          idleCount++;
+        }
+      }
+    }
+  }
+  const idleAvg = idleCount > 0 ? Math.round((idleHoursSum / idleCount) * 100) / 100 : null;
+
+  // 5. إحصائيات كل وكيل بدقة متناهية (Per-Agent Stats)
+  const agentStats = {};
+  const agentsToAnalyze = agentFilter ? [agentFilter] : uniqueAgents;
+
+  for (const ag of agentsToAnalyze) {
+    const agRecs = records.filter(r => r.agent === ag);
+    const agRows = agRecs.reduce((sum, r) => sum + (r.rows ? r.rows.length : 0), 0);
+
+    // CSAT
+    let agCsatGood = 0, agCsatTotal = 0, agCsatBad = 0;
+    for (const r of agRecs.filter(r => r.metric === 'csat')) {
+      const h = (r.header || []).map(c => String(c).toLowerCase().trim());
+      const cIdx = h.findIndex(c => c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
+      for (const row of r.rows || []) {
+        agCsatTotal++;
+        const v = cIdx !== -1 ? String(row[cIdx] || '').toLowerCase().trim() : '';
+        if (v === 'good' || v === '5' || v === '4' || v === 'positive') agCsatGood++;
+        else if (v === 'bad' || v === '1' || v === '2' || v === 'negative') agCsatBad++;
+      }
+    }
+
+    // AGBT
+    let agAgbtSum = 0, agAgbtCount = 0;
+    for (const r of agRecs.filter(r => r.metric === 'agbt')) {
+      const h = (r.header || []).map(c => String(c).toLowerCase().trim());
+      const aIdx = h.findIndex(c => c === 'agbt' || c.includes('agbt'));
+      for (const row of r.rows || []) {
+        if (aIdx !== -1) {
+          const val = parseFloat(row[aIdx]);
+          if (!isNaN(val)) {
+            agAgbtSum += val;
+            agAgbtCount++;
+          }
+        }
+      }
+    }
+
+    // ABST
+    let agAbstSum = 0, agAbstCount = 0;
+    for (const r of agRecs.filter(r => r.metric === 'abst')) {
+      const h = (r.header || []).map(c => String(c).toLowerCase().trim());
+      const sIdx = h.findIndex(c => c === 'basket_session_time_min' || c.includes('basket_session_time') || c === 'abst');
+      for (const row of r.rows || []) {
+        if (sIdx !== -1) {
+          const val = parseFloat(row[sIdx]);
+          if (!isNaN(val)) {
+            agAbstSum += val;
+            agAbstCount++;
+          }
+        }
+      }
+    }
+
+    const agBreak = extractBreakMetrics(agRecs);
+    const agLateness = extractLatenessMetrics(agRecs);
+
+    // Idle
+    let agIdleSum = 0;
+    for (const r of agRecs.filter(r => r.metric === 'idle')) {
+      const h = (r.header || []).map(c => String(c).toLowerCase().trim());
+      const iIdx = h.findIndex(c => c.includes('idle') || c.includes('not_working'));
+      for (const row of r.rows || []) {
+        if (iIdx !== -1) {
+          const v = parseFloat(row[iIdx]);
+          if (!isNaN(v)) agIdleSum += v;
+        }
+      }
+    }
+
+    const agEvaluated = agCsatGood + agCsatBad;
+    const agAbstAvgMins = agAbstCount > 0 ? (agAbstSum / agAbstCount) : 0;
+    const agAbstFormatted = agAbstAvgMins > 0 ? `${Math.floor(agAbstAvgMins)}:${String(Math.round((agAbstAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+    const agAgbtAvgMins = agAgbtCount > 0 ? (agAgbtSum / agAgbtCount) : 0;
+    const agAgbtFormatted = agAgbtAvgMins > 0 ? `${Math.floor(agAgbtAvgMins)}:${String(Math.round((agAgbtAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+
+    agentStats[ag] = {
+      agent: ag,
+      recordsCount: agRecs.length,
+      rowsCount: agRows,
+      csatPct: agEvaluated > 0 ? Math.round((agCsatGood / agEvaluated) * 100 * 10) / 10 : (agCsatTotal > 0 && agCsatGood > 0 ? 100 : null),
+      csatTotal: agCsatTotal,
+      csatGood: agCsatGood,
+      csatBad: agCsatBad,
+      agbtAvg: agAgbtCount > 0 ? Math.round((agAgbtSum / agAgbtCount) * 100) / 100 : null,
+      agbtDisplay: agAgbtFormatted,
+      abstAvg: agAbstFormatted,
+      breakBreaches: agBreak.breaches,
+      breakExceedMins: agBreak.exceedMins,
+      latenessIncidents: agLateness.incidents,
+      latenessMins: agLateness.totalMins,
+      idleHours: Math.round(agIdleSum * 100) / 100
+    };
+  }
+
+  // 6. استخراج الخط الزمني اليومي الفعلي (Daily Timeline Trend)
+  const dailyMap = {};
+  function getDayEntry(day) {
+    if (!dailyMap[day]) {
+      dailyMap[day] = {
+        day,
+        displayDay: day.slice(5),
+        abstSessions: 0,
+        abstTotalMins: 0,
+        abstCount: 0,
+        longSessions: 0,
+        agbtSessions: 0,
+        agbtTotalMins: 0,
+        agbtCount: 0,
+        csatGood: 0,
+        csatBad: 0,
+        csatTotal: 0,
+        breakExceedMins: 0,
+        breakBreaches: 0,
+        latenessMins: 0,
+        latenessIncidents: 0
+      };
+    }
+    return dailyMap[day];
+  }
+
+  for (const r of list) {
+    const h = (r.header || []).map(c => String(c).toLowerCase().trim());
+    const metric = r.metric;
+
+    const abstMinsIdx = h.findIndex(c => c === 'basket_session_time_min' || c.includes('basket_session_time') || c === 'abst');
+    const over20Idx = h.findIndex(c => c === '> 20' || c.includes('> 20') || c.includes('over_20'));
+    const agbtSessionsIdx = h.findIndex(c => c === 'sessions count' || c.includes('sessions count') || c === 'sessions');
+    const agbtTicketsIdx = h.findIndex(c => c === 'tickets' || c.includes('tickets'));
+    const agbtMinsIdx = h.findIndex(c => c.includes('sum_basket_time') || c === 'agbt' || c.includes('basket_time'));
+    const csatScoreIdx = h.findIndex(c => c === 'csat_adjusted' || c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
+
+    for (const row of r.rows || []) {
+      const day = extractRowDate(row, r.header);
+      if (!day) continue;
+      const entry = getDayEntry(day);
+
+      if (metric === 'abst') {
+        entry.abstSessions++;
+        let isLong = false;
+        if (abstMinsIdx !== -1) {
+          const m = parseFloat(row[abstMinsIdx]);
+          if (!isNaN(m)) {
+            entry.abstTotalMins += m;
+            entry.abstCount++;
+            if (m >= 20) isLong = true;
+          }
+        }
+        if (over20Idx !== -1) {
+          const v = String(row[over20Idx] || '').toLowerCase().trim();
+          if (v === 'high' || v === 'yes') isLong = true;
+        }
+        if (isLong) entry.longSessions++;
+      } else if (metric === 'agbt') {
+        let sCount = 1;
+        if (agbtSessionsIdx !== -1) {
+          const s = parseInt(row[agbtSessionsIdx], 10);
+          if (!isNaN(s) && s > 0) sCount = s;
+        } else if (agbtTicketsIdx !== -1) {
+          const t = parseInt(row[agbtTicketsIdx], 10);
+          if (!isNaN(t) && t > 0) sCount = t;
+        }
+        entry.agbtSessions += sCount;
+        if (agbtMinsIdx !== -1) {
+          const m = parseFloat(row[agbtMinsIdx]);
+          if (!isNaN(m)) {
+            entry.agbtTotalMins += m;
+            entry.agbtCount++;
+          }
+        }
+      } else if (metric === 'csat') {
+        entry.csatTotal++;
+        if (csatScoreIdx !== -1) {
+          const score = String(row[csatScoreIdx] || '').toLowerCase().trim();
+          if (score === 'good' || score === '5' || score === '4' || score === 'positive') {
+            entry.csatGood++;
+          } else if (score === 'bad' || score === '1' || score === '2' || score === 'negative') {
+            entry.csatBad++;
+          }
+        }
+      }
+    }
+  }
+
+  const timeline = Object.keys(dailyMap).sort().map(d => {
+    const entry = dailyMap[d];
+    let sessions = 0;
+    if (entry.abstSessions > 0) sessions = entry.abstSessions;
+    else if (entry.agbtSessions > 0) sessions = entry.agbtSessions;
+    else if (entry.csatTotal > 0) sessions = entry.csatTotal;
+
+    let abstMins = 0;
+    if (entry.abstCount > 0) {
+      abstMins = Math.round((entry.abstTotalMins / entry.abstCount) * 100) / 100;
+    } else if (entry.agbtCount > 0) {
+      abstMins = Math.round((entry.agbtTotalMins / entry.agbtCount) * 100) / 100;
+    }
+
+    const csatEvaluatedDaily = entry.csatGood + entry.csatBad;
+    const csatPctDaily = csatEvaluatedDaily > 0 ? Math.round((entry.csatGood / csatEvaluatedDaily) * 100 * 10) / 10 : null;
+
+    return {
+      day: d,
+      displayDay: entry.displayDay,
+      sessions,
+      abstMins,
+      abstSecs: Math.round(abstMins * 60),
+      agbtSecs: entry.agbtCount > 0 ? Math.round((entry.agbtTotalMins / entry.agbtCount) * 60) : 0,
+      longSessions: entry.longSessions,
+      long: entry.longSessions,
+      csatPct: csatPctDaily,
+      csat: csatPctDaily !== null ? Math.round(csatPctDaily) : 0,
+      csatGood: entry.csatGood,
+      csatBad: entry.csatBad,
+      csatTotal: entry.csatTotal,
+      count: sessions || 1
+    };
+  });
+
+  const totalTimelineSessions = timeline.reduce((s, t) => s + t.sessions, 0);
+  const totalSessions = Math.max(totalTimelineSessions, agbtTickets || 0);
+  const totalLongSessions = timeline.reduce((s, t) => s + t.longSessions, 0);
+  const activeDays = timeline.filter(t => t.sessions > 0 || t.abstMins > 0 || t.csatTotal > 0).length;
+  const avgDailySessions = activeDays > 0 ? Math.round((totalSessions / activeDays) * 10) / 10 : 0;
+
+  return {
+    totalRecords,
+    totalRows,
+    totalSessions,
+    totalLongSessions,
+    activeDays,
+    avgDailySessions,
+    uniqueAgents,
+    metricCounts,
+    csat: { total: csatTotal, good: csatGood, bad: csatBad, pct: csatPct, byCountry: csatByCountry, byChannel: csatByChannel },
+    agbt: { avg: agbtAvg, tickets: agbtTickets, basketHours: Math.round(agbtBasketHours * 100) / 100 },
+    breakBreach: {
+      breaches: overallBreak.breaches,
+      met: 0,
+      exceedMins: overallBreak.exceedMins,
+      recordedShifts: overallBreak.recordedShifts
+    },
+    lateness: {
+      incidents: overallLateness.incidents,
+      totalMins: overallLateness.totalMins,
+      recordedShifts: overallLateness.recordedShifts
+    },
+    idle: { avgHours: idleAvg, totalHours: Math.round(idleHoursSum * 100) / 100 },
+    agentStats,
+    timeline
+  };
+}
+
+/**
+ * ============================================================================
+ * 2. دوال تخديم الواجهة (Web App Endpoints)
  * ============================================================================
  */
 function doGet(e) {
@@ -60,11 +847,6 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/**
- * ============================================================================
- * استقبال وحفظ البيانات المرسلة من إضافة المتصفح عبر POST
- * ============================================================================
- */
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -74,7 +856,7 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    const payload = JSON.parse(e.postData.contents);
+    const payload = JSON.parse(e.postData.contents.replace(/^\uFEFF/, ''));
     const saveResult = savePayloadToMicroPartitionedDrive(payload);
 
     const logMsg = `مزامنة تجزئة دقيقة لـ Drive: (${saveResult.summaryCount}) وكيل ملخص، و (${saveResult.drillCount}) مقياس، و (${saveResult.ticketsCount}) تذكرة لتاريخ ${saveResult.date}.`;
@@ -86,7 +868,7 @@ function doPost(e) {
       drillCount: saveResult.drillCount,
       ticketsCount: saveResult.ticketsCount,
       date: saveResult.date,
-      message: `تم حفظ وتجزئة كل مقياس لكل موظف في ملف مستقل في Google Drive! (${saveResult.summaryCount} وكيل، ${saveResult.drillCount} مقياس)`
+      message: `تم حفظ وتجزئة كل مقياس لكل موظف بنجاح في Google Drive! (${saveResult.summaryCount} وكيل، ${saveResult.drillCount} مقياس)`
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
@@ -100,7 +882,7 @@ function doPost(e) {
 
 /**
  * ============================================================================
- * إدارة المجلدات وأسماء الملفات الدقيقة في Google Drive
+ * 3. إدارة المجلدات والتخزين بالتجزئة الدقيقة في Google Drive
  * ============================================================================
  */
 
@@ -127,26 +909,18 @@ function getAgentFileSlug(email) {
   return 'agent_' + String(email || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
 }
 
-/**
- * إنشاء اسم ملف مخصص لكل موظف ولكل مقياس بشكل مستقل تماماً
- * مثال: agent_sultan_tabby_ai_csat
- */
 function getAgentMetricFileSlug(email, metric) {
   const safeEmail = String(email || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
   const safeMetric = String(metric || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
   return `agent_${safeEmail}_${safeMetric}`;
 }
 
-/**
- * إدارة الذاكرة المؤقتة السريعة (CacheService)
- */
+// الذاكرة المؤقتة السريعة (CacheService)
 function getCachedOverview() {
   try {
     const cache = CacheService.getScriptCache();
     const cached = cache.get("SUMMARY_OVERVIEW_DATA");
-    if (cached) {
-      return JSON.parse(cached);
-    }
+    if (cached) return JSON.parse(cached);
   } catch (e) {
     console.warn("Cache read warning:", e);
   }
@@ -173,7 +947,7 @@ function clearCachedOverview() {
 
 /**
  * ============================================================================
- * حفظ وتجزئة كل مقياس لكل موظف في ملف مستقل (Granular Micro-Partitioning)
+ * 4. حفظ وتجزئة كل مقياس لكل موظف في ملف مستقل مع التحليل الرياضي الشامل
  * ============================================================================
  */
 function savePayloadToMicroPartitionedDrive(payload) {
@@ -182,193 +956,185 @@ function savePayloadToMicroPartitionedDrive(payload) {
   const parentFolder = getOrCreateDataFolder();
   const drillsFolder = getOrCreateDrillsFolder();
 
-  let summaryCount = 0;
+  // استخراج وتطبيع السجلات الواردة بدقة
+  const rawResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : (payload.header ? [payload] : []));
+  const incomingNormalized = [];
+
+  rawResults.forEach((res, idx) => {
+    try {
+      incomingNormalized.push(normalizeRecord(res, idx, payload.fileName || 'PAYLOAD'));
+    } catch (e) {
+      console.warn(`Record normalization warning at index ${idx}:`, e.message);
+    }
+  });
+
+  // جمع كافة السجلات الحالية من ملفات المقاييس المحدثة لحساب الإحصائيات التراكمية
+  const allUpdatedRecords = [];
   let drillCount = 0;
   let ticketsCount = 0;
 
-  // 1. قراءة أو تهيئة ملف الملخص العام الحالي
-  let overviewData = {
-    version: 3,
-    lastUpdated: nowStr,
-    summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm'), totalMetrics: 7, totalDrillRows: 0 },
-    agents: [],
-    historicalDays: []
-  };
+  // خريطة لتجميع السجلات حسب (agent + metric)
+  const incomingMap = new Map();
+  for (const rec of incomingNormalized) {
+    const key = `${rec.agent.toLowerCase()}::${rec.metric.toLowerCase()}`;
+    if (!incomingMap.has(key)) incomingMap.set(key, []);
+    incomingMap.get(key).push(rec);
+  }
 
-  const summaryFiles = parentFolder.getFilesByName(CONFIG.SUMMARY_FILE_NAME);
-  let summaryFile = null;
-  if (summaryFiles.hasNext()) {
-    summaryFile = summaryFiles.next();
-    try {
-      const content = summaryFile.getBlob().getDataAsString();
-      if (content && content.trim()) {
-        overviewData = JSON.parse(content);
+  // معالجة وحفظ كل مقياس في ملف مستقل: drills/agent_{slug}_{metric}.json
+  for (const [key, recs] of incomingMap.entries()) {
+    const [agentEmail, metric] = key.split('::');
+    const fileName = getAgentMetricFileSlug(agentEmail, metric) + ".json";
+    const existingFiles = drillsFolder.getFilesByName(fileName);
+
+    let existingRecord = null;
+    let targetFile = null;
+
+    if (existingFiles.hasNext()) {
+      targetFile = existingFiles.next();
+      try {
+        const content = targetFile.getBlob().getDataAsString();
+        if (content && content.trim()) {
+          const parsed = JSON.parse(content);
+          existingRecord = normalizeRecord(parsed, 0, fileName);
+        }
+      } catch (e) {
+        console.warn(`Failed reading existing metric file ${fileName}:`, e);
       }
-    } catch (e) {
-      console.warn("Failed to parse existing summary file:", e);
+    }
+
+    // دمج السجلات مع منع التكرار (Deduplication)
+    let finalRecord = null;
+    if (existingRecord) {
+      const merged = mergeRecords([existingRecord], recs);
+      finalRecord = merged.records[0];
+    } else {
+      const merged = mergeRecords([], recs);
+      finalRecord = merged.records[0];
+    }
+
+    if (finalRecord) {
+      finalRecord.date = dateStr;
+      finalRecord.savedAt = nowStr;
+      allUpdatedRecords.push(finalRecord);
+      drillCount++;
+      ticketsCount += finalRecord.rows.length;
+
+      const fileJson = JSON.stringify(finalRecord);
+      if (targetFile) {
+        targetFile.setContent(fileJson);
+      } else {
+        drillsFolder.createFile(fileName, fileJson, MimeType.PLAIN_TEXT);
+      }
     }
   }
 
-  // خريطة الوكلاء الحاليين لمنع التكرار (Key: email)
-  const agentMap = {};
-  (overviewData.agents || []).forEach(a => {
-    const em = String(a.email || "").trim().toLowerCase();
-    if (em) agentMap[em] = a;
+  // إذا كانت هناك ملفات مقاييس أخرى مخزنة سابقاً في مجلد drills لم يتم إرسالها في هذا الطلب،
+  // نقرأها لتضمينها في الإحصائيات التراكمية العامة
+  const existingDrillFiles = drillsFolder.getFiles();
+  const processedKeys = new Set(incomingMap.keys());
+
+  while (existingDrillFiles.hasNext()) {
+    const dFile = existingDrillFiles.next();
+    const dName = dFile.getName();
+    if (!dName.endsWith('.json')) continue;
+
+    const parts = dName.replace('.json', '').replace('agent_', '').split('_');
+    if (parts.length >= 2) {
+      const isAlreadyProcessed = allUpdatedRecords.some(r => getAgentMetricFileSlug(r.agent, r.metric) + '.json' === dName);
+      if (!isAlreadyProcessed) {
+        try {
+          const content = dFile.getBlob().getDataAsString();
+          if (content && content.trim()) {
+            const parsed = JSON.parse(content);
+            allUpdatedRecords.push(normalizeRecord(parsed, 0, dName));
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  // 5. تشغيل المحرك الرياضي الشامل المعتمد لحساب كافة مؤشرات الفريق والوكلاء
+  const analytics = calculateAnalytics(allUpdatedRecords);
+
+  // دمج الأسماء الصريحة إذا وُجدت في payload.agents
+  const incomingAgentsMeta = payload.agents || payload.summaryAgents || [];
+  const metaMap = {};
+  incomingAgentsMeta.forEach(a => {
+    const em = String(a.email || '').trim().toLowerCase();
+    if (em) metaMap[em] = a;
   });
 
-  // تحديث الوكلاء من المصفوفة المرفقة إن وجدت
-  const incomingAgents = payload.agents || payload.summaryAgents || [];
-  if (Array.isArray(incomingAgents) && incomingAgents.length > 0) {
-    incomingAgents.forEach(a => {
-      const email = String(a.email || "").trim();
-      if (!email) return;
-      const emLower = email.toLowerCase();
-      agentMap[emLower] = {
-        date: dateStr,
-        name: String(a.name || email.split("@")[0]),
-        email: email,
-        csat: parseFloat(a.csat) || 0,
-        agbt: String(a.agbt || "00:00"),
-        abst: String(a.abst || "00:00"),
-        breakBreach: String(a.breakBreach || "0"),
-        lateness: parseFloat(a.lateness) || 0,
-        idle: String(a.idle || "0"),
-        productivity: String(a.productivity || "0%"),
-        updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
-      };
-    });
-  }
+  // بناء مصفوفة الوكلاء النهائية للشاشة الرئيسية
+  const finalAgentsList = analytics.uniqueAgents.map(agEmail => {
+    const agStat = analytics.agentStats[agEmail] || {};
+    const emLower = agEmail.toLowerCase();
+    const meta = metaMap[emLower] || {};
 
-  // 2. تجزئة وحفظ كل مقياس لكل موظف في ملف مستقل: drills/agent_{email}_{metric}.json
-  const incomingResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : []);
+    let displayName = meta.name || '';
+    if (!displayName) {
+      displayName = agEmail.split('@')[0].replace(/\./g, ' ');
+    }
 
-  if (Array.isArray(incomingResults) && incomingResults.length > 0) {
-    incomingResults.forEach(res => {
-      const agent = (res.agent || "").trim();
-      const metric = String(res.metric || "").trim().toLowerCase();
-      const rows = res.rows || [];
-      if (!agent || !metric) return;
-
-      const norm = normalizeDrillRecord(res.header || [], rows);
-      const recCount = norm.rows.length;
-      ticketsCount += recCount;
-      drillCount++;
-
-      // كائن المقياس المستقل
-      const metricDoc = {
-        date: dateStr,
-        agent: agent,
-        metric: metric,
-        title: String(res.title || `${metric.toUpperCase()} - ${agent}`).substring(0, 200),
-        header: norm.header,
-        rows: norm.rows,
-        count: recCount,
-        savedAt: nowStr
-      };
-
-      // حفظ الملف المنفصل الخاص بهذا المقياس لهذا الوكيل
-      const fileName = getAgentMetricFileSlug(agent, metric) + ".json";
-      const existingFiles = drillsFolder.getFilesByName(fileName);
-      const jsonContent = JSON.stringify(metricDoc);
-
-      if (existingFiles.hasNext()) {
-        existingFiles.next().setContent(jsonContent);
-      } else {
-        drillsFolder.createFile(fileName, jsonContent, MimeType.PLAIN_TEXT);
-      }
-
-      // استخراج وتحديث أرقام الملخص للوكيل مباشرة
-      const emLower = agent.toLowerCase();
-      if (!agentMap[emLower]) {
-        agentMap[emLower] = {
-          date: dateStr,
-          name: emLower.split("@")[0].replace(".", " "),
-          email: agent,
-          csat: 0,
-          agbt: "00:00",
-          abst: "00:00",
-          breakBreach: "0",
-          lateness: 0,
-          idle: "0",
-          productivity: "0%",
-          updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
-        };
-      }
-
-      if (metric === "csat") {
-        let good = 0, total = 0;
-        norm.rows.forEach(r => {
-          const rating = String(r[1] || r[3] || "");
-          if (rating) { total++; if (rating.includes("5") || rating.includes("4") || rating.toLowerCase().includes("good")) good++; }
-        });
-        if (total > 0) agentMap[emLower].csat = parseFloat(((good / total) * 100).toFixed(1));
-      } else if (metric === "lateness") {
-        let lateVal = 0;
-        norm.rows.forEach(r => { lateVal += (parseFloat(r[3] || r[4] || r[2] || 0) || 0); });
-        agentMap[emLower].lateness = parseFloat(lateVal.toFixed(1));
-      } else if (metric === "breakbreach" || metric === "break") {
-        agentMap[emLower].breakBreach = String(norm.rows.length);
-      }
-    });
-  }
-
-  overviewData.agents = Object.values(agentMap);
-  summaryCount = overviewData.agents.length;
-
-  // 3. الحساب المسبق للإحصائيات العامة والخط الزمني (Pre-calculated Timeline)
-  let totalCsat = 0, countCsat = 0;
-  let totalLateness = 0;
-
-  overviewData.agents.forEach(a => {
-    const csat = parseFloat(a.csat) || 0;
-    const late = parseFloat(a.lateness) || 0;
-    if (csat > 0) { totalCsat += csat; countCsat++; }
-    totalLateness += late;
+    return {
+      date: dateStr,
+      name: displayName,
+      email: agEmail,
+      csat: agStat.csatPct !== null ? agStat.csatPct : (parseFloat(meta.csat) || 0),
+      agbt: agStat.agbtDisplay || meta.agbt || "00:00",
+      abst: agStat.abstAvg || meta.abst || "00:00",
+      breakBreach: String(agStat.breakBreaches !== undefined ? agStat.breakBreaches : (meta.breakBreach || "0")),
+      lateness: agStat.latenessMins !== undefined ? agStat.latenessMins : (parseFloat(meta.lateness) || 0),
+      idle: String(agStat.idleHours !== undefined ? agStat.idleHours : (meta.idle || "0")),
+      productivity: String(meta.productivity || "0%"),
+      recordsCount: agStat.recordsCount || 0,
+      rowsCount: agStat.rowsCount || 0,
+      updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
+    };
   });
 
-  const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : "0";
-
-  if (!overviewData.historicalDays) overviewData.historicalDays = [];
-  const existingDayIdx = overviewData.historicalDays.findIndex(d => d.day === dateStr);
-  const currentDayStats = {
-    day: dateStr,
-    sessions: Math.max(1, ticketsCount || overviewData.agents.length * 5),
-    abstSecs: 90,
-    agbtSecs: 210,
-    csat: Math.round(parseFloat(avgCsat) || 90),
-    long: 2
+  // بناء ملف الملخص العام summary_overview.json
+  const overviewData = {
+    version: 4,
+    lastUpdated: nowStr,
+    summary: {
+      totalAgents: finalAgentsList.length,
+      avgCsat: analytics.csat.pct !== null ? `${analytics.csat.pct}%` : "—",
+      totalLateness: `${analytics.lateness.totalMins}`,
+      totalBreaches: `${analytics.breakBreach.breaches}`,
+      totalSessions: analytics.totalSessions,
+      totalLongSessions: analytics.totalLongSessions,
+      avgDailySessions: analytics.avgDailySessions,
+      activeDays: analytics.activeDays,
+      totalDrillRows: analytics.totalRows,
+      lastSync: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm'),
+      totalMetrics: 7
+    },
+    agents: finalAgentsList,
+    historicalDays: analytics.timeline.map(t => ({
+      day: t.day,
+      displayDay: t.displayDay,
+      sessions: t.sessions,
+      abstSecs: t.abstSecs || 0,
+      agbtSecs: t.agbtSecs || 0,
+      csat: t.csat || 0,
+      long: t.long || 0
+    }))
   };
 
-  if (existingDayIdx !== -1) {
-    overviewData.historicalDays[existingDayIdx] = currentDayStats;
-  } else {
-    overviewData.historicalDays.push(currentDayStats);
-  }
-  overviewData.historicalDays.sort((a, b) => a.day.localeCompare(b.day));
-
-  overviewData.summary = {
-    totalAgents: overviewData.agents.length,
-    avgCsat: avgCsat,
-    totalLateness: totalLateness.toFixed(1),
-    lastSync: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm'),
-    totalMetrics: 7,
-    totalDrillRows: ticketsCount || overviewData.summary.totalDrillRows || 0
-  };
-  overviewData.lastUpdated = nowStr;
-
-  // 4. حفظ ملف summary_overview.json الصغير وتحديث الكاش الفوري
+  // حفظ ملف summary_overview.json الصغير وتحديث كاش الذاكرة
   const summaryJsonStr = JSON.stringify(overviewData);
-  if (summaryFile) {
-    summaryFile.setContent(summaryJsonStr);
+  const summaryFiles = parentFolder.getFilesByName(CONFIG.SUMMARY_FILE_NAME);
+  if (summaryFiles.hasNext()) {
+    summaryFiles.next().setContent(summaryJsonStr);
   } else {
     parentFolder.createFile(CONFIG.SUMMARY_FILE_NAME, summaryJsonStr, MimeType.PLAIN_TEXT);
   }
 
-  // تحديث الذاكرة المؤقتة السريعة
   clearCachedOverview();
   setCachedOverview(overviewData);
 
-  // تحديث اختياري لـ Google Sheet (الملخص فقط بدون تذاكر)
+  // مزامنة اختيارية لـ Google Sheet (الملخص فقط بدون تذاكر)
   try {
     syncSummaryToGoogleSheetIfConfigured(overviewData.agents, dateStr);
   } catch (sheetErr) {
@@ -377,7 +1143,7 @@ function savePayloadToMicroPartitionedDrive(payload) {
 
   return {
     success: true,
-    summaryCount: summaryCount,
+    summaryCount: finalAgentsList.length,
     drillCount: drillCount,
     ticketsCount: ticketsCount,
     date: dateStr
@@ -386,12 +1152,12 @@ function savePayloadToMicroPartitionedDrive(payload) {
 
 /**
  * ============================================================================
- * قراءة بيانات النظرة العامة للوكلاء — استجابة فورية من الذاكرة أو الملف الخفيف
+ * 5. قراءة بيانات النظرة العامة للوكلاء — استجابة فورية من الذاكرة أو الملف الخفيف
  * ============================================================================
  */
 function getOverviewData() {
   try {
-    // 1. فحص الذاكرة المؤقتة السريعة أولاً (< 5 مللي ثانية!)
+    // 1. فحص كاش الذاكرة المؤقتة السريعة أولاً (< 5 مللي ثانية!)
     const cached = getCachedOverview();
     if (cached && cached.agents && cached.agents.length > 0) {
       return {
@@ -447,14 +1213,14 @@ function getOverviewData() {
       agents: [],
       summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 },
       historicalDays: [],
-      message: "حدث خطأ أثناء قراءة البيانات السريعة: " + err.message
+      message: "حدث خطأ أثناء قراءة البيانات: " + err.message
     };
   }
 }
 
 /**
  * ============================================================================
- * قراءة البيانات التفصيلية — قراءة الملف المخصص حصرياً لهذا المقياس ولهذا الوكيل
+ * 6. قراءة البيانات التفصيلية — قراءة الملف المخصص حصرياً لهذا المقياس ولهذا الوكيل
  * ============================================================================
  */
 function getAgentDetailData(email, metric) {
@@ -472,31 +1238,6 @@ function getAgentDetailData(email, metric) {
     const files = drillsFolder.getFilesByName(fileName);
 
     if (!files.hasNext()) {
-      // فحص احتياطي إذا كان محفوظاً بصيغة الملف الموحد القديم
-      const legacySlug = getAgentFileSlug(email) + ".json";
-      const legacyFiles = drillsFolder.getFilesByName(legacySlug);
-      if (legacyFiles.hasNext()) {
-        try {
-          const doc = JSON.parse(legacyFiles.next().getBlob().getDataAsString());
-          const drill = doc.metrics && doc.metrics[targetMetric];
-          if (drill) {
-            return {
-              success: true,
-              found: true,
-              isAllAgents: false,
-              email: email,
-              metric: targetMetric,
-              title: drill.title || `${targetMetric.toUpperCase()} - ${email}`,
-              header: drill.header || [],
-              rows: drill.rows || [],
-              count: (drill.rows || []).length,
-              date: drill.date || "",
-              savedAt: drill.savedAt || ""
-            };
-          }
-        } catch (e) {}
-      }
-
       return {
         success: true,
         found: false,
@@ -537,7 +1278,7 @@ function getAgentDetailData(email, metric) {
 }
 
 /**
- * توليد جدول مقارنة جميع الوكلاء لمقياس معين بدون تفاصيل التذاكر الفردية
+ * توليد جدول مقارنة جميع الوكلاء لمقياس معين
  */
 function getAllAgentsMetricSummary(agentsList, metric) {
   const m = (metric || "csat").toLowerCase();
@@ -618,9 +1359,7 @@ function getAllAgentsMetricSummary(agentsList, metric) {
 }
 
 /**
- * ============================================================================
  * تحديث اختياري لـ Google Sheet (الملخص الإحصائي فقط بدون حشر أي JSON)
- * ============================================================================
  */
 function syncSummaryToGoogleSheetIfConfigured(summaryAgents, dateStr) {
   const ss = getTargetSpreadsheet();
@@ -683,9 +1422,6 @@ function syncSummaryToGoogleSheetIfConfigured(summaryAgents, dateStr) {
   }
 }
 
-/**
- * الحصول على كائن Spreadsheet النشط أو المحدد إن وجد
- */
 function getTargetSpreadsheet() {
   try {
     if (CONFIG.SPREADSHEET_ID && CONFIG.SPREADSHEET_ID.trim() !== "" && !CONFIG.SPREADSHEET_ID.includes("YOUR_")) {
@@ -697,9 +1433,7 @@ function getTargetSpreadsheet() {
   }
 }
 
-/**
- * دوال التوافق التي تستدعيها الواجهة الأمامية (Scripts.html)
- */
+// دوال التوافق التي تستدعيها الواجهة الأمامية
 function getDashboardDataFromSheet() {
   return getOverviewData();
 }
@@ -708,9 +1442,6 @@ function getAgentDrillRowsFromSheet(email, metric) {
   return getAgentDetailData(email, metric);
 }
 
-/**
- * دالة استيراد وحفظ البيانات المنسوخة من بوابة الأدمن مباشرة في Google Drive
- */
 function importDataFromAdminPortal(rawJson, options) {
   try {
     options = options || { smartDates: true, updateSummary: true, updateArchive: true };
@@ -718,13 +1449,11 @@ function importDataFromAdminPortal(rawJson, options) {
       return { success: false, message: "لم يتم استلام أي نص JSON." };
     }
 
-    const payload = JSON.parse(rawJson);
+    const payload = JSON.parse(rawJson.replace(/^\uFEFF/, ''));
     const saveResult = savePayloadToMicroPartitionedDrive(payload);
 
     const logMsg = `استيراد إلى Google Drive (تجزئة دقيقة): (${saveResult.summaryCount}) وكيل، و (${saveResult.drillCount}) مقياس، و (${saveResult.ticketsCount}) تذكرة لتاريخ ${saveResult.date}.`;
     logSystemEvent("SUCCESS", "Admin Import to Granular Drive", logMsg);
-
-    const driveFolderUrl = getDriveFolderUrl();
 
     return {
       success: true,
@@ -732,7 +1461,7 @@ function importDataFromAdminPortal(rawJson, options) {
       drillCount: saveResult.drillCount,
       ticketsCount: saveResult.ticketsCount,
       date: saveResult.date,
-      folderUrl: driveFolderUrl,
+      folderUrl: getDriveFolderUrl(),
       message: `تم بنجاح حفظ وتجزئة كل مقياس لكل موظف في ملف مستقل في Google Drive (${saveResult.summaryCount} وكيل، ${saveResult.drillCount} مقياس)!`
     };
 
@@ -761,53 +1490,6 @@ function getSpreadsheetUrl() {
   } catch (e) {
     return "";
   }
-}
-
-/**
- * أدوات مساعدة وتطبيع البيانات
- */
-function findColIndex(headers, ...candidates) {
-  if (!Array.isArray(headers)) return -1;
-  const lower = headers.map(h => String(h).toLowerCase().trim());
-  for (const candidate of candidates) {
-    const target = candidate.toLowerCase();
-    const idx = lower.findIndex(h => h === target || h.includes(target));
-    if (idx !== -1) return idx;
-  }
-  return -1;
-}
-
-function textCell(v) {
-  if (v === null || v === undefined) return '';
-  return typeof v === 'object' ? JSON.stringify(v) : String(v);
-}
-
-function normalizeDrillRecord(header, rows) {
-  const flatHeader = (function () {
-    if (!Array.isArray(header)) return [];
-    const levels = header.some(Array.isArray)
-      ? header.map(function (lvl) { return Array.isArray(lvl) ? lvl : [lvl]; })
-      : [header];
-    const width = levels.reduce(function (max, lvl) { return Math.max(max, lvl.length); }, 0);
-    return Array.from({ length: width }, function (_, col) {
-      const names = levels.map(function (lvl) { return textCell(lvl[col]); }).filter(Boolean);
-      return [...new Set(names)].join(' / ') || 'Column ' + (col + 1);
-    });
-  })();
-
-  const flatRows = (Array.isArray(rows) ? rows : []).map(function (row) {
-    if (Array.isArray(row)) return row;
-    if (row && typeof row === 'object') {
-      return flatHeader.map(function (name) {
-        if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];
-        const key = Object.keys(row).find(function (k) { return String(k).toLowerCase() === String(name).toLowerCase(); });
-        return key ? row[key] : '';
-      });
-    }
-    return [];
-  });
-
-  return { header: flatHeader, rows: flatRows, width: flatHeader.length };
 }
 
 function logSystemEvent(type, action, details) {

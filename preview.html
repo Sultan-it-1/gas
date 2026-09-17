@@ -5322,16 +5322,49 @@ dialog.export-dialog::backdrop {
         });
         head.appendChild(trHead);
 
-        const q = AppState.searchQuery;
+        const q = AppState.searchQuery ? AppState.searchQuery.toLowerCase().trim() : '';
         const fltCsat = AppState.detailFilters.csatScore;
         const fltChan = AppState.detailFilters.channel;
+        const fltDate = AppState.detailFilters.datePreset;
+
+        const csatColIdx = findHeaderCol(rawHeader, 'csat_adjusted', 'csat', 'score');
+        const chanColIdx = findHeaderCol(rawHeader, 'ticket_channel', 'channel');
 
         let visibleRows = rawRows.filter(r => {
-            const rowStr = r.join(' ').toLowerCase();
-            if (q && !rowStr.includes(q)) return false;
-            if (fltCsat === 'good' && !rowStr.includes('good') && !rowStr.includes('5') && !rowStr.includes('4')) return false;
-            if (fltCsat === 'bad' && !rowStr.includes('bad') && !rowStr.includes('1') && !rowStr.includes('2')) return false;
-            if (fltChan !== 'all' && !rowStr.includes(fltChan.toLowerCase())) return false;
+            // Search filter
+            if (q) {
+                const matchesSearch = r.some(cell => String(cell || '').toLowerCase().includes(q));
+                if (!matchesSearch) return false;
+            }
+
+            // CSAT Score filter (column-specific)
+            if (fltCsat !== 'all') {
+                const val = csatColIdx !== -1 ? String(r[csatColIdx] || '').toLowerCase().trim() : '';
+                const isGood = (val === 'good' || val === '5' || val === '4' || val === 'positive' || val.includes('ممتاز') || val.includes('جيد'));
+                const isBad = (val === 'bad' || val === '1' || val === '2' || val === 'negative' || val.includes('سيء'));
+                if (fltCsat === 'good' && !isGood) return false;
+                if (fltCsat === 'bad' && !isBad) return false;
+            }
+
+            // Channel filter (column-specific)
+            if (fltChan !== 'all' && chanColIdx !== -1) {
+                const ch = String(r[chanColIdx] || '').toLowerCase().trim();
+                if (ch !== fltChan.toLowerCase()) return false;
+            }
+
+            // Date preset filter
+            if (fltDate !== 'all') {
+                const rDate = extractCellDate(r, rawHeader);
+                if (!rDate) return false;
+                const today = new Date().toISOString().slice(0, 10);
+                if (fltDate === 'today' && rDate !== today) return false;
+                if (fltDate === 'yesterday') {
+                    const y = new Date(); y.setDate(y.getDate() - 1);
+                    const yStr = y.toISOString().slice(0, 10);
+                    if (rDate !== yStr) return false;
+                }
+            }
+
             return true;
         });
 
@@ -5366,20 +5399,105 @@ dialog.export-dialog::backdrop {
         body.innerHTML = '';
         pagedRows.forEach(rowCells => {
             const tr = document.createElement('tr');
-            rowCells.forEach(cell => {
+            rowCells.forEach((cell, cIdx) => {
                 const td = document.createElement('td');
-                const cellStr = String(cell);
-                if (cellStr.toLowerCase() === 'good' || cellStr === '5' || cellStr === '4') {
-                    td.innerHTML = `<span class="badge badge-success">${cellStr}</span>`;
-                } else if (cellStr.toLowerCase() === 'bad' || cellStr === '1' || cellStr === '2') {
-                    td.innerHTML = `<span class="badge badge-danger">${cellStr}</span>`;
-                } else {
-                    td.textContent = cellStr;
-                }
+                const colName = rawHeader[cIdx] || '';
+                td.innerHTML = formatDrillCell(cell, colName);
                 tr.appendChild(td);
             });
             body.appendChild(tr);
         });
+    }
+
+    function findHeaderCol(headers, ...candidates) {
+        if (!Array.isArray(headers)) return -1;
+        const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
+        for (const candidate of candidates) {
+            const target = candidate.toLowerCase();
+            const idx = lowerHeaders.findIndex(h => h === target || h.includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    }
+
+    function extractCellDate(row, headers) {
+        if (!row || !headers) return null;
+        const h = headers.map(c => String(c).toLowerCase().trim());
+        const priorityNames = ['day', 'report_dt', 'ticket_creation_date', 'date_resolved_dubai', 'created_at_dubai', 'csat_submitted_at_dubai', 'shift_date', 'plan_shift_start', 'fact_shift_start', 'date'];
+        for (const name of priorityNames) {
+            const idx = h.findIndex(c => c === name || c.includes(name));
+            if (idx !== -1 && row[idx]) {
+                const str = String(row[idx]).trim();
+                const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
+                if (m) return m[0];
+            }
+        }
+        for (let idx = 0; idx < h.length; idx++) {
+            const col = h[idx];
+            if (col.includes('date') || col.includes('day') || col.includes('dt') || col.includes('time')) {
+                const str = String(row[idx] || '').trim();
+                const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
+                if (m) return m[0];
+            }
+        }
+        return null;
+    }
+
+    function formatDrillCell(val, colName) {
+        if (val === null || val === undefined || String(val).trim() === '' || val === '—') {
+            return `<span style="color:var(--muted); opacity:0.6;">—</span>`;
+        }
+        const text = String(val).trim();
+        const lower = text.toLowerCase();
+        const lowerCol = String(colName || '').toLowerCase();
+
+        // 1. Compliance & Met status
+        if (lower === 'met') {
+            return `<span class="badge" style="background:rgba(16, 185, 129, 0.15); color:#34d399; border:1px solid rgba(16, 185, 129, 0.3);">✓ Met</span>`;
+        } else if (lower === 'not met' || lower === 'breached' || lower.includes('breach')) {
+            return `<span class="badge" style="background:rgba(239, 68, 68, 0.15); color:#f87171; border:1px solid rgba(239, 68, 68, 0.3);">✕ ${text}</span>`;
+        }
+
+        // 2. CSAT Score
+        if (lowerCol.includes('csat') || lowerCol.includes('score')) {
+            if (lower === 'good' || lower === '5' || lower === '4' || lower === 'positive' || lower.includes('ممتاز') || lower.includes('جيد')) {
+                return `<span class="badge" style="background:rgba(16, 185, 129, 0.15); color:#34d399; border:1px solid rgba(16, 185, 129, 0.3);">✓ ${text}</span>`;
+            } else if (lower === 'bad' || lower === '1' || lower === '2' || lower === 'negative' || lower.includes('سيء')) {
+                return `<span class="badge" style="background:rgba(239, 68, 68, 0.15); color:#f87171; border:1px solid rgba(239, 68, 68, 0.3);">✕ ${text}</span>`;
+            }
+        }
+
+        // 3. Channel
+        if (lowerCol.includes('channel')) {
+            if (lower === 'chat') return `<span style="color:#38bdf8; font-weight:600;">💬 Chat</span>`;
+            if (lower === 'phone') return `<span style="color:#a78bfa; font-weight:600;">📞 Phone</span>`;
+            if (lower === 'email') return `<span style="color:#fbbf24; font-weight:600;">✉️ Email</span>`;
+        }
+
+        // 4. Country
+        if (lowerCol === 'country' || lowerCol === 'ticket_country') {
+            if (lower === 'ksa') return `<span style="font-weight:600;">🇸🇦 KSA</span>`;
+            if (lower === 'uae') return `<span style="font-weight:600;">🇦🇪 UAE</span>`;
+        }
+
+        // 5. Hour durations
+        if (lowerCol.includes('not_working') || lowerCol.includes('idle') || lowerCol === 'basket_time_h' || lowerCol === 'fact_breaks_h') {
+            const num = parseFloat(text);
+            if (!isNaN(num)) {
+                const mins = Math.round(num * 60);
+                return `<span title="${num.toFixed(2)} ساعة تعادل حوالي ${mins} دقيقة" style="font-family:'JetBrains Mono',monospace;">${num.toFixed(2)}h <small style="color:var(--muted); font-size:11px;">(${mins} د)</small></span>`;
+            }
+        }
+
+        // 6. Long float numbers
+        if (/^\d+\.\d{3,}$/.test(text)) {
+            const num = parseFloat(text);
+            if (!isNaN(num)) {
+                return `<span title="${text}" style="font-family:'JetBrains Mono',monospace;">${num.toFixed(2)}</span>`;
+            }
+        }
+
+        return text;
     }
 
     window.selectAgentFromTable = (email) => {
