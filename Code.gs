@@ -187,7 +187,12 @@ function getOverviewData() {
     let totalDrillRows = 0;
     const drillSheet = ss.getSheetByName(CONFIG.SHEET_DRILLS);
     if (drillSheet && drillSheet.getLastRow() > 1) {
-      const drillCounts = drillSheet.getRange(2, 7, drillSheet.getLastRow() - 1, 1).getValues();
+      const headerRow = drillSheet.getRange(1, 1, 1, Math.min(drillSheet.getLastColumn(), 10)).getValues()[0];
+      let countCol = 5;
+      for (let c = 0; c < headerRow.length; c++) {
+        if (String(headerRow[c]).includes("عدد")) { countCol = c + 1; break; }
+      }
+      const drillCounts = drillSheet.getRange(2, countCol, drillSheet.getLastRow() - 1, 1).getValues();
       drillCounts.forEach(c => {
         totalDrillRows += parseInt(c[0]) || 0;
       });
@@ -336,6 +341,8 @@ function getAgentDetailData(email, metric) {
         try { header = JSON.parse(data[i][4] || "[]"); } catch (e) { header = []; }
         try { rows = JSON.parse(data[i][5] || "[]"); } catch (e) { rows = []; }
 
+        const recCount = parseInt(data[i][4]) || parseInt(data[i][6]) || rows.length || 0;
+
         return {
           success: true,
           found: true,
@@ -345,9 +352,9 @@ function getAgentDetailData(email, metric) {
           title: String(data[i][3] || ""),
           header: header,
           rows: rows,
-          count: rows.length,
+          count: recCount,
           date: String(data[i][0] || ""),
-          savedAt: String(data[i][7] || "")
+          savedAt: String(data[i][6] || data[i][7] || "")
         };
       }
     }
@@ -587,6 +594,7 @@ function saveAgentsToSheet(agents, dateStr) {
 /**
  * ============================================================================
  * حفظ وتحديث نتائج الـ Drills التفصيلية في ورقة Drill_Archive مع منع التكرار
+ * يتم تسجيل البيانات كأعمدة وصفوف نظيفة وطبيعية تماماً (بدون تكديس JSON في الخلايا)
  * المفتاح الفريد: (التاريخ + البريد الإلكتروني + المقياس)
  * ============================================================================
  */
@@ -600,9 +608,9 @@ function saveExtensionResultsToSheet(results, dateStr, shouldUpdateSummary) {
     drillSheet.setRightToLeft(true);
     drillSheet.appendRow([
       "التاريخ", "البريد الإلكتروني", "المقياس", "العنوان", 
-      "ترويسة الأعمدة (Header JSON)", "بيانات الصفوف (Rows JSON)", "عدد السجلات", "وقت الحفظ"
+      "عدد التذاكر / السجلات", "النتيجة / القيمة", "وقت الحفظ"
     ]);
-    drillSheet.getRange("A1:H1").setFontWeight("bold").setBackground("#0f172a").setFontColor("#38bdf8");
+    drillSheet.getRange("A1:G1").setFontWeight("bold").setBackground("#0f172a").setFontColor("#38bdf8");
     drillSheet.setFrozenRows(1);
   }
 
@@ -629,24 +637,46 @@ function saveExtensionResultsToSheet(results, dateStr, shouldUpdateSummary) {
   results.forEach(res => {
     const agent = (res.agent || "").trim();
     const metric = (res.metric || "").trim();
-    const header = res.header || [];
     const rows = res.rows || [];
     if (!agent || !metric) return;
 
+    // احتساب قيمة واضحة للمقياس بدون وضع أي كود JSON في الخلية
+    let metricVal = `${rows.length} تذكرة`;
+    if (metric === "csat") {
+      let good = 0, total = 0;
+      rows.forEach(r => {
+        const rating = String(r[1] || r[3] || "");
+        if (rating) {
+          total++;
+          if (rating.includes("5") || rating.includes("4") || rating.toLowerCase().includes("good")) good++;
+        }
+      });
+      metricVal = total > 0 ? ((good / total) * 100).toFixed(1) + "%" : "0%";
+    } else if (metric === "lateness") {
+      let totalLate = 0;
+      rows.forEach(r => {
+        const m = parseFloat(r[3] || r[4] || r[2] || 0) || 0;
+        totalLate += m;
+      });
+      metricVal = totalLate.toFixed(1) + " د";
+    } else if (metric === "breakBreach") {
+      metricVal = rows.length + " تجاوز";
+    }
+
+    // كتابة بيانات نظيفة كأعمدة واضحة بدون تكديس مصفوفات JSON داخل الخلايا
     const rowValues = [
       dateStr,
       agent,
-      metric,
-      res.title || `${metric.toUpperCase()} - ${agent}`,
-      JSON.stringify(header),
-      JSON.stringify(rows),
+      metric.toUpperCase(),
+      String(res.title || `${metric.toUpperCase()} - ${agent}`).substring(0, 200),
       rows.length,
+      metricVal,
       nowStr
     ];
 
     const drillKey = dateStr + "|" + agent.toLowerCase() + "|" + metric.toLowerCase();
     if (drillKeyMap[drillKey]) {
-      // تحديث السجل القائم لنفس اليوم والوكيل والمقياس بدلاً من تكرار السطور
+      // تحديث السجل القائم لنفس اليوم والوكيل والمقياس
       drillSheet.getRange(drillKeyMap[drillKey], 1, 1, rowValues.length).setValues([rowValues]);
     } else {
       newDrillRows.push(rowValues);
@@ -730,7 +760,8 @@ function logSystemEvent(type, action, details) {
       logSheet.setFrozenRows(1);
     }
     const now = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
-    logSheet.appendRow([now, type, action, details]);
+    const safeDetails = String(details || "").substring(0, 2000);
+    logSheet.appendRow([now, type, action, safeDetails]);
   } catch (e) {
     console.warn("Log writing failed:", e);
   }
