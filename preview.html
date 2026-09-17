@@ -2165,10 +2165,11 @@ dialog.export-dialog::backdrop {
     border-collapse: collapse;
     font-size: 12px;
     table-layout: fixed;
+    line-height: 1.3;
 }
 
 .period-table thead th {
-    padding: 10px 8px;
+    padding: 8px 8px;
     background: rgba(30, 41, 59, 0.7);
     color: #e2e8f0;
     font-weight: 700;
@@ -2185,7 +2186,7 @@ dialog.export-dialog::backdrop {
 }
 
 .period-table tbody td {
-    padding: 9px 6px;
+    padding: 6px 6px;
     text-align: center;
     border-bottom: 1px solid rgba(51, 65, 85, 0.4);
     white-space: nowrap;
@@ -3296,8 +3297,8 @@ dialog.export-dialog::backdrop {
             <p class="muted" id="topbarSubtitle" data-i18n="appSubtitle">Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.</p>
         </div>
         <div class="topbar-actions">
-            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="بوابة الإدارة — لصق واستيراد البيانات للشيت">
-                <span>🔑 استيراد البيانات (Admin)</span>
+            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="الإدارة — استيراد وحظر وحذف وإدارة المدراء">
+                <span>⚙️ الإدارة</span>
             </button>
             <button id="btnLangToggle" class="button lang-toggle-btn" type="button" title="Switch Language to Arabic / تغيير اللغة للعربية">
                 <span class="lang-icon">🌐</span>
@@ -3808,12 +3809,89 @@ dialog.export-dialog::backdrop {
                     <span>📊 فتح ملف Google Sheet</span>
                 </button>
             </div>
+            <!-- إدارة المستخدمين (حظر / حذف) -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                    <h3 style="font-size:14px; color:#fff; margin:0;">👥 إدارة المستخدمين (حظر / حذف)</h3>
+                    <button type="button" id="adminBtnRefreshUsers" class="admin-btn-ghost" style="padding:6px 12px; font-size:12px;">🔄 تحديث</button>
+                </div>
+                <div id="adminUsersList" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">اضغط "🔄 تحديث" لتحميل الوكلاء.</p>
+                </div>
+            </div>
+
+            <!-- إحصائيات سريعة -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 10px;">📊 إحصائيات سريعة</h3>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">👥 الوكلاء</div>
+                        <strong id="adminStatAgents" style="font-size:18px; color:#38bdf8;">0</strong>
+                    </div>
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">📊 المقاييس</div>
+                        <strong id="adminStatMetrics" style="font-size:18px; color:#38bdf8;">7</strong>
+                    </div>
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">🔢 التذاكر</div>
+                        <strong id="adminStatRows" style="font-size:18px; color:#38bdf8;">0</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- إدارة المدراء -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👑 إدارة المدراء (Admins)</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">المدراء فقط يمكنهم فتح نافذة الإدارة هذه.</p>
+                <div id="adminAdminsList" style="display:flex; flex-direction:column; gap:6px;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <input type="email" id="adminNewAdminInput" placeholder="إيميل المدير الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAdmin" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                </div>
+                <div id="adminAdminsStatus" style="margin-top:8px; font-size:11px;"></div>
+            </div>
+
+            <!-- إدارة المستخدمين المصرح لهم -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👥 إدارة المستخدمين المصرح لهم (Access)</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">هؤلاء فقط يمكنهم فتح الموقع. المدراء مسموح لهم تلقائياً.</p>
+                <div id="adminAllowedList" style="display:flex; flex-direction:column; gap:6px;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <input type="email" id="adminNewAllowedInput" placeholder="إيميل المستخدم الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAllowed" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                </div>
+                <div id="adminAllowedStatus" style="margin-top:8px; font-size:11px;"></div>
+            </div>
+
+        </div>
+    </div>
+</div>
+<!-- مودال تأكيد الحذف النهائي -->
+<div id="adminDeleteModal" class="admin-modal-overlay" style="display:none;">
+    <div class="admin-modal-card" style="max-width:420px;">
+        <div class="admin-modal-header">
+            <h2 style="color:#fca5a5; font-size:16px; margin:0;">⚠️ تأكيد الحذف النهائي</h2>
+            <button type="button" class="admin-btn-close" id="adminBtnCancelDelete">✕</button>
+        </div>
+        <div class="admin-modal-body">
+            <p style="font-size:13px; color:var(--muted); margin:0 0 6px;">سيتم حذف <strong id="adminDeleteAgentName" style="color:#fecaca;"></strong> وجميع بياناته نهائياً. لا يمكن التراجع.</p>
+            <p style="font-size:12px; color:var(--muted); margin:0 0 10px;">للتأكيد اكتب البريد الإلكتروني للوكيل بالضبط:</p>
+            <input type="text" id="adminDeleteConfirmInput" dir="ltr" autocomplete="off" placeholder="اكتب البريد الإلكتروني هنا..." style="width:100%; padding:9px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#fff; font-size:13px; outline:none;">
+            <div class="admin-modal-actions" style="margin-top:14px;">
+                <button type="button" class="admin-btn-secondary" id="adminBtnCancelDelete2">إلغاء</button>
+                <button type="button" class="admin-btn-primary" id="adminBtnConfirmDelete" disabled style="background:#ef4444; border-color:#ef4444;">🗑️ حذف نهائي</button>
+            </div>
         </div>
     </div>
 </div>
 
+
 <script>
-    window.APP_INITIAL_DATA = <?!= (typeof initialData !== 'undefined' && initialData) ? initialData : '{}' ?>;
+    window.APP_INITIAL_DATA = {"isAdmin":true,"openAdmin":false,"currentUserEmail":"preview@local"};
 </script>
 
 <!-- تضمين كود الجافاسكربت الخاص بالواجهة في Google Apps Script -->
@@ -4606,6 +4684,8 @@ dialog.export-dialog::backdrop {
 
         // نافذة بوابة الإدارة (Admin Modal)
         setupAdminModal();
+        setupAdminUserManagement();
+        setupAdminManagement();
 
         // زر التحديث المباشر من الشيت
         const btnRefresh = el('btnRefreshSheet');
@@ -4734,9 +4814,230 @@ dialog.export-dialog::backdrop {
         }
     }
 
+    // ================= إدارة المستخدمين في نافذة الإدارة (حظر / حذف) =================
+    function setupAdminUserManagement() {
+        const listEl = el('adminUsersList');
+        const refreshBtn = el('adminBtnRefreshUsers');
+        const deleteModal = el('adminDeleteModal');
+        const deleteAgentName = el('adminDeleteAgentName');
+        const deleteConfirmInput = el('adminDeleteConfirmInput');
+        const btnConfirmDelete = el('adminBtnConfirmDelete');
+        const btnCancelDelete = el('adminBtnCancelDelete');
+        const btnCancelDelete2 = el('adminBtnCancelDelete2');
+        if (!listEl) return;
+
+        let deleteTargetEmail = '';
+
+        function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        function loadUsers() {
+            listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run
+                    .withSuccessHandler(renderUsers)
+                    .withFailureHandler(err => { listEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; })
+                    .getAllAgentsForAdmin();
+            } else {
+                listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">إدارة المستخدمين متاحة في النسخة المنشورة.</p>';
+            }
+        }
+
+        function renderUsers(res) {
+            const agents = (res && Array.isArray(res.agents)) ? res.agents : [];
+            const bannedSet = new Set((res && Array.isArray(res.bannedAgents)) ? res.bannedAgents : []);
+            agents.forEach(u => { u.banned = bannedSet.has(String(u.email || '').toLowerCase().trim()); });
+            if (!agents.length) { listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد وكلاء بعد.</p>'; return; }
+            listEl.innerHTML = '';
+            agents.forEach(u => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(15,23,42,0.5);border:1px solid ' + (u.banned ? 'rgba(245,158,11,0.5)' : 'var(--border)') + ';border-radius:8px;';
+                row.innerHTML = '<div style="flex:1;min-width:0;">' +
+                    '<div style="font-size:12.5px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.name || u.email) + (u.banned ? ' <span style="color:#fbbf24;font-size:11px;">(محظور)</span>' : '') + '</div>' +
+                    '<div style="font-size:11px;color:var(--muted);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.email) + '</div></div>' +
+                    '<button type="button" class="admin-btn-ghost" data-action="toggle" data-email="' + esc(u.email) + '" data-banned="' + u.banned + '" style="padding:5px 10px;font-size:11px;white-space:nowrap;">' + (u.banned ? '✅ إلغاء' : '🚫 حظر') + '</button>' +
+                    '<button type="button" class="admin-btn-ghost" data-action="del" data-email="' + esc(u.email) + '" data-name="' + esc(u.name || u.email) + '" style="padding:5px 10px;font-size:11px;color:#f87171;white-space:nowrap;">🗑️ حذف</button>';
+                listEl.appendChild(row);
+            });
+            listEl.querySelectorAll('[data-action="toggle"]').forEach(b => b.addEventListener('click', () => {
+                toggleBan(b.getAttribute('data-email'), b.getAttribute('data-banned') === 'true' ? false : true);
+            }));
+            listEl.querySelectorAll('[data-action="del"]').forEach(b => b.addEventListener('click', () => {
+                openDeleteModal(b.getAttribute('data-email'), b.getAttribute('data-name'));
+            }));
+        }
+
     /**
      * إعداد نافذة الإدارة المنبثقة (Admin Portal Modal)
      */
+        function toggleBan(email, banned) {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(() => loadUsers()).withFailureHandler(() => loadUsers()).setAgentBanned(email, banned);
+            }
+        }
+
+        function openDeleteModal(email, name) {
+            deleteTargetEmail = email;
+            deleteAgentName.textContent = name;
+            deleteConfirmInput.value = '';
+            btnConfirmDelete.disabled = true;
+            deleteModal.style.display = 'flex';
+            deleteConfirmInput.focus();
+        }
+
+        function closeDeleteModal() {
+            deleteTargetEmail = '';
+            deleteModal.style.display = 'none';
+            deleteConfirmInput.value = '';
+            btnConfirmDelete.disabled = true;
+        }
+
+        function confirmDelete() {
+            if (!deleteTargetEmail || deleteConfirmInput.value.trim().toLowerCase() !== deleteTargetEmail.toLowerCase()) return;
+            btnConfirmDelete.disabled = true;
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run
+                    .withSuccessHandler(() => { closeDeleteModal(); loadUsers(); })
+                    .withFailureHandler(() => { closeDeleteModal(); loadUsers(); })
+                    .deleteAgentData(deleteTargetEmail);
+            }
+        }
+
+        if (refreshBtn) refreshBtn.addEventListener('click', loadUsers);
+        if (btnCancelDelete) btnCancelDelete.addEventListener('click', closeDeleteModal);
+        if (btnCancelDelete2) btnCancelDelete2.addEventListener('click', closeDeleteModal);
+        if (deleteModal) deleteModal.addEventListener('click', e => { if (e.target === deleteModal) closeDeleteModal(); });
+        if (deleteConfirmInput) deleteConfirmInput.addEventListener('input', () => {
+            btnConfirmDelete.disabled = deleteConfirmInput.value.trim().toLowerCase() !== (deleteTargetEmail || '').toLowerCase();
+        });
+        if (btnConfirmDelete) btnConfirmDelete.addEventListener('click', confirmDelete);
+    }
+
+    // ================= إدارة المدراء + المستخدمين المصرح لهم + الإحصائيات =================
+    function setupAdminManagement() {
+        const adminsListEl = el('adminAdminsList');
+        const newAdminInput = el('adminNewAdminInput');
+        const btnAddAdmin = el('adminBtnAddAdmin');
+        const adminsStatus = el('adminAdminsStatus');
+        const allowedListEl = el('adminAllowedList');
+        const newAllowedInput = el('adminNewAllowedInput');
+        const btnAddAllowed = el('adminBtnAddAllowed');
+        const allowedStatus = el('adminAllowedStatus');
+        if (!adminsListEl && !allowedListEl) return;
+
+        function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        function loadStats() {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) {
+                        const ag = el('adminStatAgents');
+                        const me = el('adminStatMetrics');
+                        const ro = el('adminStatRows');
+                        if (ag) ag.textContent = res.totalAgents || 0;
+                        if (me) me.textContent = res.totalMetrics || 7;
+                        if (ro) ro.textContent = (res.totalRows || 0).toLocaleString();
+                    }
+                }).getAdminStats();
+            }
+        }
+
+        function loadAdmins() {
+            if (!adminsListEl) return;
+            adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(renderAdmins).withFailureHandler(err => { adminsListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAdminsList();
+            }
+        }
+        function renderAdmins(res) {
+            if (!adminsListEl) return;
+            const admins = (res && Array.isArray(res.admins)) ? res.admins : [];
+            const currentUser = (res && res.currentUser) || '';
+            if (!admins.length) { adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مدراء.</p>'; return; }
+            adminsListEl.innerHTML = '';
+            admins.forEach(email => {
+                const isPrimary = email.toLowerCase() === 'sultan.alkharmani@tabby.sa';
+                const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
+                    (isPrimary ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,0.2);color:#fbbf24;white-space:nowrap;">أساسي</span>' : '') +
+                    (isPrimary ? '' : '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>');
+                adminsListEl.appendChild(row);
+            });
+            adminsListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAdmin(b.getAttribute('data-email'))));
+        }
+        function addAdmin() {
+            const email = newAdminInput ? newAdminInput.value.trim() : '';
+            if (!email) { if (adminsStatus) { adminsStatus.textContent = '⚠️ أدخل إيميل أولاً.'; adminsStatus.style.color = '#fbbf24'; } return; }
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (newAdminInput) newAdminInput.value = ''; if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإضافة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).addAdminEmail(email);
+            }
+        }
+        function removeAdmin(email) {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإزالة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).removeAdminEmail(email);
+            }
+        }
+        function loadAllowed() {
+            if (!allowedListEl) return;
+            allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(renderAllowed).withFailureHandler(err => { allowedListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAllowedList();
+            }
+        }
+        function renderAllowed(res) {
+            if (!allowedListEl) return;
+            const allowed = (res && Array.isArray(res.allowed)) ? res.allowed : [];
+            const currentUser = (res && res.currentUser) || '';
+            if (!allowed.length) { allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مستخدمون مصرح لهم بعد.</p>'; return; }
+            allowedListEl.innerHTML = '';
+            allowed.forEach(email => {
+                const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
+                    '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>';
+                allowedListEl.appendChild(row);
+            });
+            allowedListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAllowed(b.getAttribute('data-email'))));
+        }
+        function addAllowed() {
+            const email = newAllowedInput ? newAllowedInput.value.trim() : '';
+            if (!email) { if (allowedStatus) { allowedStatus.textContent = '⚠️ أدخل إيميل أولاً.'; allowedStatus.style.color = '#fbbf24'; } return; }
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (newAllowedInput) newAllowedInput.value = ''; if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإضافة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).addAllowedEmail(email);
+            }
+        }
+        function removeAllowed(email) {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإزالة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).removeAllowedEmail(email);
+            }
+        }
+
+        if (btnAddAdmin) btnAddAdmin.addEventListener('click', addAdmin);
+        if (newAdminInput) newAdminInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAdmin(); });
+
+        loadStats();
+        loadAdmins();
+        if (btnAddAllowed) btnAddAllowed.addEventListener('click', addAllowed);
+        if (newAllowedInput) newAllowedInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAllowed(); });
+        loadAllowed();
+    }
+
     function setupAdminModal() {
         const overlay = el('adminModalOverlay');
         const btnOpen = el('btnAdminPortal');
@@ -4765,7 +5066,15 @@ dialog.export-dialog::backdrop {
             document.body.style.overflow = '';
         }
 
-        if (btnOpen) btnOpen.addEventListener('click', openModal);
+        // زر الإدارة يفتح نافذة الإدارة المنبثقة، ويظهر فقط للمدراء المسموح لهم
+        const initData = (typeof window !== 'undefined' && window.APP_INITIAL_DATA) ? window.APP_INITIAL_DATA : {};
+        if (btnOpen) {
+            if (!initData.isAdmin) {
+                btnOpen.style.display = 'none';
+            } else {
+                btnOpen.addEventListener('click', openModal);
+            }
+        }
         if (btnClose) btnClose.addEventListener('click', closeModal);
 
         overlay.addEventListener('click', (e) => {

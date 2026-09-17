@@ -8,6 +8,7 @@ const scripts = fs.readFileSync(path.join(dir, 'Scripts.html'), 'utf8');
 
 index = index.replace("<?!= include('Styles'); ?>", styles);
 index = index.replace("<?!= include('Scripts'); ?>", scripts);
+index = index.replace("<?!= (typeof initialData !== 'undefined' && initialData) ? initialData : '{}' ?>", JSON.stringify({ isAdmin: true, openAdmin: false, currentUserEmail: 'preview@local' }));
 
 fs.writeFileSync(path.join(dir, 'preview.html'), index, 'utf8');
 console.log('preview.html built successfully!');

@@ -544,6 +544,53 @@
                 </div>
             </div>
 
+            <!-- إحصائيات سريعة -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 10px;">📊 إحصائيات سريعة</h3>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">👥 الوكلاء</div>
+                        <strong id="adminStatAgents" style="font-size:18px; color:#38bdf8;">0</strong>
+                    </div>
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">📊 المقاييس</div>
+                        <strong id="adminStatMetrics" style="font-size:18px; color:#38bdf8;">7</strong>
+                    </div>
+                    <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:11px; color:var(--muted);">🔢 التذاكر</div>
+                        <strong id="adminStatRows" style="font-size:18px; color:#38bdf8;">0</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- إدارة المدراء -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👑 إدارة المدراء (Admins)</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">المدراء فقط يمكنهم فتح نافذة الإدارة هذه.</p>
+                <div id="adminAdminsList" style="display:flex; flex-direction:column; gap:6px;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <input type="email" id="adminNewAdminInput" placeholder="إيميل المدير الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAdmin" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                </div>
+                <div id="adminAdminsStatus" style="margin-top:8px; font-size:11px;"></div>
+            </div>
+
+            <!-- إدارة المستخدمين المصرح لهم -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👥 إدارة المستخدمين المصرح لهم (Access)</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">هؤلاء فقط يمكنهم فتح الموقع. المدراء مسموح لهم تلقائياً.</p>
+                <div id="adminAllowedList" style="display:flex; flex-direction:column; gap:6px;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <input type="email" id="adminNewAllowedInput" placeholder="إيميل المستخدم الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAllowed" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                </div>
+                <div id="adminAllowedStatus" style="margin-top:8px; font-size:11px;"></div>
+            </div>
+
         </div>
     </div>
 </div>

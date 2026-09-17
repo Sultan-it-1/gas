@@ -787,6 +787,8 @@
 
         // نافذة بوابة الإدارة (Admin Modal)
         setupAdminModal();
+        setupAdminUserManagement();
+        setupAdminManagement();
 
         // زر التحديث المباشر من الشيت
         const btnRefresh = el('btnRefreshSheet');
@@ -1013,6 +1015,132 @@
         if (btnConfirmDelete) btnConfirmDelete.addEventListener('click', confirmDelete);
     }
 
+    // ================= إدارة المدراء + المستخدمين المصرح لهم + الإحصائيات =================
+    function setupAdminManagement() {
+        const adminsListEl = el('adminAdminsList');
+        const newAdminInput = el('adminNewAdminInput');
+        const btnAddAdmin = el('adminBtnAddAdmin');
+        const adminsStatus = el('adminAdminsStatus');
+        const allowedListEl = el('adminAllowedList');
+        const newAllowedInput = el('adminNewAllowedInput');
+        const btnAddAllowed = el('adminBtnAddAllowed');
+        const allowedStatus = el('adminAllowedStatus');
+        if (!adminsListEl && !allowedListEl) return;
+
+        function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        function loadStats() {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) {
+                        const ag = el('adminStatAgents');
+                        const me = el('adminStatMetrics');
+                        const ro = el('adminStatRows');
+                        if (ag) ag.textContent = res.totalAgents || 0;
+                        if (me) me.textContent = res.totalMetrics || 7;
+                        if (ro) ro.textContent = (res.totalRows || 0).toLocaleString();
+                    }
+                }).getAdminStats();
+            }
+        }
+
+        function loadAdmins() {
+            if (!adminsListEl) return;
+            adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(renderAdmins).withFailureHandler(err => { adminsListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAdminsList();
+            }
+        }
+        function renderAdmins(res) {
+            if (!adminsListEl) return;
+            const admins = (res && Array.isArray(res.admins)) ? res.admins : [];
+            const currentUser = (res && res.currentUser) || '';
+            if (!admins.length) { adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مدراء.</p>'; return; }
+            adminsListEl.innerHTML = '';
+            admins.forEach(email => {
+                const isPrimary = email.toLowerCase() === 'sultan.alkharmani@tabby.sa';
+                const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
+                    (isPrimary ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,0.2);color:#fbbf24;white-space:nowrap;">أساسي</span>' : '') +
+                    (isPrimary ? '' : '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>');
+                adminsListEl.appendChild(row);
+            });
+            adminsListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAdmin(b.getAttribute('data-email'))));
+        }
+        function addAdmin() {
+            const email = newAdminInput ? newAdminInput.value.trim() : '';
+            if (!email) { if (adminsStatus) { adminsStatus.textContent = '⚠️ أدخل إيميل أولاً.'; adminsStatus.style.color = '#fbbf24'; } return; }
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (newAdminInput) newAdminInput.value = ''; if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإضافة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).addAdminEmail(email);
+            }
+        }
+        function removeAdmin(email) {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإزالة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).removeAdminEmail(email);
+            }
+        }
+        function loadAllowed() {
+            if (!allowedListEl) return;
+            allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(renderAllowed).withFailureHandler(err => { allowedListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAllowedList();
+            }
+        }
+        function renderAllowed(res) {
+            if (!allowedListEl) return;
+            const allowed = (res && Array.isArray(res.allowed)) ? res.allowed : [];
+            const currentUser = (res && res.currentUser) || '';
+            if (!allowed.length) { allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مستخدمون مصرح لهم بعد.</p>'; return; }
+            allowedListEl.innerHTML = '';
+            allowed.forEach(email => {
+                const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
+                    '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>';
+                allowedListEl.appendChild(row);
+            });
+            allowedListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAllowed(b.getAttribute('data-email'))));
+        }
+        function addAllowed() {
+            const email = newAllowedInput ? newAllowedInput.value.trim() : '';
+            if (!email) { if (allowedStatus) { allowedStatus.textContent = '⚠️ أدخل إيميل أولاً.'; allowedStatus.style.color = '#fbbf24'; } return; }
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (newAllowedInput) newAllowedInput.value = ''; if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإضافة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).addAllowedEmail(email);
+            }
+        }
+        function removeAllowed(email) {
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.success) { if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإزالة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).removeAllowedEmail(email);
+            }
+        }
+
+        if (btnAddAdmin) btnAddAdmin.addEventListener('click', addAdmin);
+        if (newAdminInput) newAdminInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAdmin(); });
+
+        loadStats();
+        loadAdmins();
+        if (btnAddAllowed) btnAddAllowed.addEventListener('click', addAllowed);
+        if (newAllowedInput) newAllowedInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAllowed(); });
+        loadAllowed();
+    }
+
     function setupAdminModal() {
         const overlay = el('adminModalOverlay');
         const btnOpen = el('btnAdminPortal');
@@ -1041,16 +1169,13 @@
             document.body.style.overflow = '';
         }
 
-        // زر الإدارة ينقلك لصفحة الإدارة الكاملة (بدل فتح النافذة المنبثقة)
-        // ويظهر فقط للمدراء المسموح لهم
+        // زر الإدارة يفتح نافذة الإدارة المنبثقة، ويظهر فقط للمدراء المسموح لهم
         const initData = (typeof window !== 'undefined' && window.APP_INITIAL_DATA) ? window.APP_INITIAL_DATA : {};
         if (btnOpen) {
             if (!initData.isAdmin) {
                 btnOpen.style.display = 'none';
             } else {
-                btnOpen.addEventListener('click', () => {
-                    window.location.href = '?page=admin';
-                });
+                btnOpen.addEventListener('click', openModal);
             }
         }
         if (btnClose) btnClose.addEventListener('click', closeModal);

@@ -866,20 +866,11 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  if (openAdmin) {
-    if (!userIsAdmin) {
-      return HtmlService.createHtmlOutput(getAccessDeniedHtml())
-        .setTitle('Access Denied')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    }
-    try {
-      return HtmlService.createHtmlOutputFromFile('Admin')
-        .setTitle('Admin Portal — استيراد وحفظ البيانات | Google Drive DB')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    } catch (errAdmin) {
-      // احتياطي
-    }
+  // صفحة الإدارة مدمجة داخل اللوحة كنافذة منبثقة (تجنب صفحة فارغة)
+  if (openAdmin && !userIsAdmin) {
+    return HtmlService.createHtmlOutput(getAccessDeniedHtml())
+      .setTitle('Access Denied')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   const template = HtmlService.createTemplateFromFile('Index');
