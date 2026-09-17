@@ -1,0 +1,1948 @@
+<script>
+/**
+ * ============================================================================
+ * AGENT PERFORMANCE HUB - COMPLETE CONTROLLER (WITH MULTILINGUAL I18N SUPPORT)
+ * ============================================================================
+ * - Default Language: English (with instant switch to Arabic)
+ * - Strict English numerals (123) maintained across BOTH languages
+ * - Comparison table and drill table with sortable columns & filters
+ * - Live Google Sheets integration and SVG interactive performance charts
+ * ============================================================================
+ */
+
+(() => {
+    'use strict';
+
+    const METRIC_LABELS = {
+        all: 'All Metrics',
+        csat: 'CSAT',
+        agbt: 'AGBT',
+        abst: 'ABST',
+        breakBreach: 'Break breach',
+        lateness: 'Lateness',
+        idle: 'Idle',
+        productivity: 'Productivity'
+    };
+
+    /**
+     * Complete Internationalization (i18n) Manager
+     */
+    const I18N = {
+        currentLang: 'en', // Default is English
+        translations: {
+            en: {
+                appTitle: 'Agent Dashboard',
+                appSubtitle: 'Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.',
+                cloudRefresh: '🔄 Refresh from Google Sheet',
+                cloudUpdating: '🔄 Loading data from Sheet...',
+                readyStatus: 'Ready.',
+                dataLoadedSuccess: 'Successfully loaded data for ({count}) agents from Google Sheet!',
+                loadFailed: 'Failed to read data from Google Sheet: ',
+                emptyDataTitle: 'Details in One Place',
+                emptyDataDesc: 'No data recorded in Google Sheet yet. Open the dashboard and use the extension to sync data.',
+                
+                // Tabs
+                tabDataView: 'Results & Data Table',
+                tabStatsView: 'Performance Analytics & Charts',
+                
+                // Top Stats
+                statSheet: 'Worksheet',
+                statAgents: 'Agents',
+                statMetrics: 'Metrics',
+                statRows: 'Recorded Rows',
+                
+                // Sidebar
+                sidebarTitle: 'Metrics & Agent',
+                sidebarAgentLabel: 'Agent',
+                sidebarAllAgentsOption: 'All Agents (Full Team)',
+                sidebarMetricLabel: 'Metric',
+                sidebarBackToAll: '👥 Back to All Agents Table',
+                sidebarBackToAllDesc: 'Hide sidebar and return to full comparison table',
+                agentUnit: 'Agents',
+                
+                // Detail Header
+                allAgentsTitle: 'All Agents (Comparison Table)',
+                allAgentsMeta: 'Unified comparison table displaying direct metrics for all agents from Google Sheets',
+                agentMeta: 'Detailed records and operations for agent ({email})',
+                btnViewAllAgents: '👥 View All Agents Table',
+                btnDownloadCsv: '📥 Download CSV',
+                
+                // Table Search & Pagination
+                searchPlaceholder: 'Search in any column, agent name, or value...',
+                noMatchingRows: 'No records match your search criteria.',
+                btnPrevious: 'Previous',
+                btnNext: 'Next',
+                pageIndicator: 'Page {current} / {total}',
+                
+                // Comparison Table Columns
+                colIndex: '#',
+                colName: 'Agent Name',
+                colEmail: 'Email Address',
+                colCsat: 'CSAT %',
+                colAgbt: 'AGBT',
+                colAbst: 'ABST (Response)',
+                colBreakBreach: 'Break Breach',
+                colLateness: 'Lateness (mins)',
+                colIdle: 'Idle Time',
+                colProductivity: 'Productivity',
+                colAction: 'Action',
+                colMetricVal: '{metric} Value',
+                colStatus: 'Rating / Status',
+                btnDetails: 'Details 🔍',
+                btnViewTickets: 'View Tickets 🔍',
+                
+                // Drill Table Columns
+                drillColTicket: 'Ticket ID',
+                drillColDateTime: 'Date & Time',
+                drillColChannel: 'Channel',
+                drillColScore: 'Rating',
+                drillColSubject: 'Subject',
+                drillColNotes: 'Notes',
+                noDrillRecordsTitle: 'No detailed records found in Drill_Archive for this agent in metric ({metric})',
+                noDrillRecordsSub: 'Open the agent workspace and run the extension to collect tickets, then click ☁️ Quick Sync to Google Sheets.',
+                
+                // Filter Toolbar
+                filterToolbarTitle: 'Metric Filters',
+                filterReset: '↺ Reset Filters',
+                activeFiltersBadge: '{count} active filter',
+                filterDateRange: 'Date Range',
+                filterCsat: 'Customer Satisfaction',
+                filterChannel: 'Channel',
+                filterTopSessions: 'Filter by Handling Time',
+                
+                // Filter Options
+                filterAllPeriod: 'All Recorded Period',
+                filterToday: 'Today',
+                filterYesterday: 'Yesterday',
+                filterThisWeek: 'This Week',
+                filterAllCsat: 'All (Satisfied & Unsatisfied)',
+                filterGoodCsat: 'Satisfied only (Good 4-5★)',
+                filterBadCsat: 'Unsatisfied only (Bad 1-3★)',
+                filterAllChannels: 'All Channels',
+                filterChat: 'Chat',
+                filterWhatsApp: 'WhatsApp',
+                filterEmail: 'Email',
+                filterAllSessions: 'All Sessions',
+                filterTop5: 'Top 5 Longest Sessions',
+                filterTop10: 'Top 10 Longest Sessions',
+                
+                // Summary Bar
+                totalAgentsLabel: 'Total Agents:',
+                teamAvgCsatLabel: 'Team Avg CSAT:',
+                totalLatenessLabel: 'Total Lateness:',
+                totalBreachesLabel: 'Total Break Breaches:',
+                avgSessionsLabel: 'Avg Daily Sessions:',
+                
+                // Analytics View
+                analyticsTitle: 'Live Performance Analytics & Charts',
+                analyticsSubtitle: 'Advanced dashboard displaying quality metrics, handling rates, customer satisfaction, and break breaches directly from Google Sheets.',
+                analyticsFilterLabel: 'Show Analytics:',
+                analyticsAllAgentsOption: 'All Agents (Team Total)',
+                
+                // KPI Cards
+                kpiCsatTitle: 'CSAT Satisfaction Rate',
+                kpiCsatBadge: '90%+ Target',
+                kpiCsatSub: 'Recorded customer satisfaction average',
+                
+                kpiAgbtTitle: 'Average AGBT',
+                kpiAgbtBadge: 'min/session',
+                kpiAgbtSub: 'Average handling duration',
+                
+                kpiBreachTitle: 'Break Breaches',
+                kpiBreachBadge: 'Breaches',
+                kpiBreachSub: 'Recorded break exceedances',
+                
+                kpiLatenessTitle: 'Shift Lateness',
+                kpiLatenessBadge: 'minutes',
+                kpiLatenessSub: 'Minutes late from shift start',
+                
+                kpiIdleTitle: 'Non-Productive / Idle Hours',
+                kpiIdleBadge: 'Idle',
+                kpiIdleSub: 'Unutilized logged time',
+                
+                // Quick Strip
+                secTotalSessions: 'Total Sessions & Tickets:',
+                secDailyAvg: 'Daily Average Sessions:',
+                secActiveDays: 'Recorded Work Days:',
+                secLongSessions: 'Sessions ≥ 20 mins:',
+                unitSessions: 'sessions',
+                unitDays: 'days',
+                unitDailyAvg: 'sessions/day',
+                unitMinutes: 'min',
+                unitTimes: 'breaches',
+                
+                // Chart Section
+                chartSectionTitle: 'Daily Performance & ABST Trend Chart',
+                chartSectionSubtitle: 'Track your daily productivity, session volume, and average ABST across active days',
+                chartTabSessions: 'Daily Sessions',
+                chartTabAbst: 'ABST Rate',
+                chartTabAgbt: 'AGBT Rate',
+                chartTabCsat: 'CSAT Score',
+                chartTabLong: 'Sessions 20m+',
+                chartModeBar: 'Bars',
+                chartModeLine: 'Line',
+                chartRangeLabel: '📅 Range:',
+                chartRangeRecent: 'Recent Available Days (Default)',
+                chartRangeWeek: 'This Week',
+                chartRangeMonth: 'This Month',
+                chartRangeCustom: 'Custom from Calendar 📆',
+                chartFrom: 'From:',
+                chartTo: 'To:',
+                chartApply: 'Apply',
+                chartBenchmark: 'Average: ',
+                chartLegendSessions: 'Daily Sessions (Completed Tickets)',
+                chartLegendAbst: 'Daily Average ABST (First Response)',
+                chartLegendAgbt: 'Daily Average AGBT (Handling Time)',
+                chartLegendCsat: 'Daily Average CSAT Customer Satisfaction',
+                chartLegendLong: 'Sessions Lasting 20 Minutes or More',
+                chartFooterNote: '* Days are calculated dynamically from Google Sheets records',
+                activeDaysBadge: '{count} Days with Data',
+                
+                // Deep Dive
+                csatDistributionTitle: 'Customer Satisfaction Distribution (CSAT)',
+                csatDistributionSub: 'Agents reaching target (90%+):',
+                csatNote: '* Calculated from active Daily_Summary records synced from the extension.',
+                agentRankingsTitle: 'Agent Performance Rankings',
+                satisfiedLabel: 'Satisfied Customers (Good 4-5★)',
+                unsatisfiedLabel: 'Unsatisfied Customers (Bad 1-3★)',
+                
+                // Status Pills
+                statusExcellent: 'Excellent 🟢',
+                statusNeedsFollowup: 'Needs Follow-up 🟡',
+                statusFast: 'Fast 🟢 (Positive)',
+                statusNormal: 'Normal 🟡 (Acceptable)',
+                statusSlow: 'Slow 🔴 (Needs Speeding Up)',
+                statusOnTime: 'On Time 🟢',
+                statusLate: 'Late 🔴',
+                statusZeroBreaches: 'Zero Breaches 🟢',
+                statusBreached: 'Breach Logged 🔴',
+                
+                // Footer
+                footerNotice: 'Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.',
+                
+                // Switch button
+                langSwitchBtn: 'العربية',
+                langSwitchTitle: 'تغيير اللغة إلى العربية'
+            },
+            ar: {
+                appTitle: 'Agent Dashboard',
+                appSubtitle: 'قراءة وعرض مؤشرات أداء الوكلاء والتحليلات التفصيلية مباشرة وحصرياً من Google Sheets.',
+                cloudRefresh: '🔄 تحديث من Google Sheet',
+                cloudUpdating: '🔄 جاري تحميل البيانات من الشيت...',
+                readyStatus: 'جاهز.',
+                dataLoadedSuccess: 'تم تحميل بيانات ({count}) وكيلاً بنجاح من Google Sheet!',
+                loadFailed: 'تعذر قراءة البيانات من Google Sheet: ',
+                emptyDataTitle: 'التفاصيل في مكان واحد',
+                emptyDataDesc: 'لا توجد بيانات مسجلة في الشيت بعد. افتح لوحة التحكم الأصلية واستخدم الإضافة للضغط على ☁️ مزامنة سريعة إلى Google Sheets.',
+                
+                // Tabs
+                tabDataView: 'عرض النتائج والبيانات',
+                tabStatsView: 'إحصائيات الأداء والرسوم البيانية',
+                
+                // Top Stats
+                statSheet: 'ورقة العمل',
+                statAgents: 'الوكلاء',
+                statMetrics: 'المقاييس',
+                statRows: 'الصفوف المسجلة',
+                
+                // Sidebar
+                sidebarTitle: 'قائمة المقاييس والوكيل',
+                sidebarAgentLabel: 'الوكيل (Agent)',
+                sidebarAllAgentsOption: 'كل الوكلاء (جميع الفريق)',
+                sidebarMetricLabel: 'المقياس (Metric)',
+                sidebarBackToAll: '👥 العودة لجميع الوكلاء',
+                sidebarBackToAllDesc: 'إخفاء القائمة والرجوع لجدول المقارنة الكامل',
+                agentUnit: 'وكيل',
+                
+                // Detail Header
+                allAgentsTitle: 'جميع الوكلاء (All Agents)',
+                allAgentsMeta: 'جدول موحد يعرض مؤشر ({metric}) لجميع الوكلاء مباشرة من Google Sheet',
+                agentMeta: 'سجلات وتفاصيل العمليات للوكيل ({email})',
+                btnViewAllAgents: '👥 عرض جدول جميع الوكلاء',
+                btnDownloadCsv: '📥 تنزيل الصفوف CSV',
+                
+                // Table Search & Pagination
+                searchPlaceholder: 'ابحث في أي عمود أو وكيل أو قيمة...',
+                noMatchingRows: 'لا توجد سجلات تطابق خيارات البحث الحالية.',
+                btnPrevious: 'السابق',
+                btnNext: 'التالي',
+                pageIndicator: 'صفحة {current} / {total}',
+                
+                // Comparison Table Columns
+                colIndex: '#',
+                colName: 'اسم الوكيل',
+                colEmail: 'البريد الإلكتروني',
+                colCsat: 'CSAT %',
+                colAgbt: 'AGBT',
+                colAbst: 'ABST (الرد)',
+                colBreakBreach: 'تأخير البريك',
+                colLateness: 'دقائق التأخير',
+                colIdle: 'وقت الخمول',
+                colProductivity: 'الإنتاجية',
+                colAction: 'إجراء',
+                colMetricVal: 'قيمة {metric}',
+                colStatus: 'التقييم / الحالة',
+                btnDetails: 'تفاصيل 🔍',
+                btnViewTickets: 'عرض تذاكر الوكيل 🔍',
+                
+                // Drill Table Columns
+                drillColTicket: 'رقم التذكرة',
+                drillColDateTime: 'التاريخ والوقت',
+                drillColChannel: 'القناة',
+                drillColScore: 'التقييم',
+                drillColSubject: 'الموضوع',
+                drillColNotes: 'ملاحظات',
+                noDrillRecordsTitle: 'لا توجد سجلات تفصيلية محفوظة في ورقة Drill_Archive لهذا الوكيل في مقياس ({metric})',
+                noDrillRecordsSub: 'يمكنك فتح صفحة العمل، وتشغيل الإضافة لجمع مقاييس هذا الوكيل ثم الضغط على ☁️ مزامنة سريعة إلى Google Sheets.',
+                
+                // Filter Toolbar
+                filterToolbarTitle: 'فلاتر المقياس',
+                filterReset: '↺ إعادة تعيين الفلاتر',
+                activeFiltersBadge: '{count} فلتر نشط',
+                filterDateRange: 'نطاق التاريخ',
+                filterCsat: 'رضا العملاء',
+                filterChannel: 'القناة',
+                filterTopSessions: 'فرز حسب مدة المعالجة',
+                
+                // Filter Options
+                filterAllPeriod: 'كامل الفترة المسجلة',
+                filterToday: 'اليوم',
+                filterYesterday: 'أمس',
+                filterThisWeek: 'هذا الأسبوع',
+                filterAllCsat: 'الكل (راضي وغير راضي)',
+                filterGoodCsat: 'راضي فقط (Good 4-5★)',
+                filterBadCsat: 'غير راضي (Bad 1-3★)',
+                filterAllChannels: 'جميع القنوات',
+                filterChat: 'محادثة (Chat)',
+                filterWhatsApp: 'واتساب (WhatsApp)',
+                filterEmail: 'بريد إلكتروني (Email)',
+                filterAllSessions: 'جميع الجلسات',
+                filterTop5: 'أعلى 5 جلسات استغراقاً',
+                filterTop10: 'أعلى 10 جلسات',
+                
+                // Summary Bar
+                totalAgentsLabel: 'إجمالي الوكلاء:',
+                teamAvgCsatLabel: 'متوسط الفريق CSAT:',
+                totalLatenessLabel: 'إجمالي التأخيرات:',
+                totalBreachesLabel: 'إجمالي تجاوزات البريك:',
+                avgSessionsLabel: 'متوسط السيشن اليومي:',
+                
+                // Analytics View
+                analyticsTitle: 'إحصائيات الأداء والتحليلات البيانية',
+                analyticsSubtitle: 'لوحة متقدمة تعرض مؤشرات الجودة ومعدلات المعالجة ورضا العملاء وتجاوزات البريك تلقائياً من بيانات Google Sheets.',
+                analyticsFilterLabel: 'عرض إحصائيات:',
+                analyticsAllAgentsOption: 'كل الوكلاء (إجمالي الفريق)',
+                
+                // KPI Cards
+                kpiCsatTitle: 'معدل رضا العملاء CSAT',
+                kpiCsatBadge: '90%+ الهدف',
+                kpiCsatSub: 'متوسط رضا العملاء المسجل',
+                
+                kpiAgbtTitle: 'متوسط AGBT',
+                kpiAgbtBadge: 'دقيقة/جلسة',
+                kpiAgbtSub: 'معدل وقت المعالجة AGBT',
+                
+                kpiBreachTitle: 'تأخيرات البريك (Break Breach)',
+                kpiBreachBadge: 'البريك',
+                kpiBreachSub: 'سجل تجاوزات البريك',
+                
+                kpiLatenessTitle: 'اللاتنس وتأخير الشفت (Lateness)',
+                kpiLatenessBadge: 'دقائق',
+                kpiLatenessSub: 'دقائق التأخير عن بداية الوردية',
+                
+                kpiIdleTitle: 'ساعات عدم العمل / الخمول',
+                kpiIdleBadge: 'Idle',
+                kpiIdleSub: 'الوقت غير المستغل',
+                
+                // Quick Strip
+                secTotalSessions: 'إجمالي السيشنات والتكتات:',
+                secDailyAvg: 'متوسط السيشن اليومي:',
+                secActiveDays: 'أيام العمل المسجلة:',
+                secLongSessions: 'جلسات 20 د وفوق:',
+                unitSessions: 'سيشن',
+                unitDays: 'يوم',
+                unitDailyAvg: 'سيشن/يوم',
+                unitMinutes: 'د',
+                unitTimes: 'مرة',
+                
+                // Chart Section
+                chartSectionTitle: 'المخطط البياني اليومي للأداء ومعدل ABST',
+                chartSectionSubtitle: 'تتبع مسار إنتاجيتك اليومية، عدد السيشنات، ومتوسط سرعة الرد (ABST) عبر الأيام',
+                chartTabSessions: 'السيشن اليومي',
+                chartTabAbst: 'معدل ABST',
+                chartTabAgbt: 'معدل AGBT',
+                chartTabCsat: 'رضا العملاء CSAT',
+                chartTabLong: 'جلسات 20 د+',
+                chartModeBar: 'أعمدة',
+                chartModeLine: 'خطي',
+                chartRangeLabel: '📅 نطاق العرض:',
+                chartRangeRecent: 'آخر الأيام المتاحة (افتراضي)',
+                chartRangeWeek: 'هذا الأسبوع',
+                chartRangeMonth: 'هذا الشهر',
+                chartRangeCustom: 'تحديد من التقويم 📆',
+                chartFrom: 'من:',
+                chartTo: 'إلى:',
+                chartApply: 'تطبيق',
+                chartBenchmark: 'المتوسط: ',
+                chartLegendSessions: 'السيشن اليومي (تكتات منجزة)',
+                chartLegendAbst: 'متوسط سرعة الرد ABST اليومي',
+                chartLegendAgbt: 'متوسط وقت المعالجة AGBT اليومي',
+                chartLegendCsat: 'متوسط رضا العملاء CSAT اليومي',
+                chartLegendLong: 'جلسات استغرقت 20 دقيقة فأكثر',
+                chartFooterNote: '* يتم حساب الأيام تلقائياً من بيانات Google Sheets',
+                activeDaysBadge: '{count} أيام مسجلة',
+                
+                // Deep Dive
+                csatDistributionTitle: 'تصنيف جودة رضا العملاء (CSAT Distribution)',
+                csatDistributionSub: 'نسبة الوكلاء المحققين للهدف (90%+):',
+                csatNote: '* يتم احتساب المتوسطات بناءً على أحدث بيانات مسجلة في شيت Daily_Summary ومحدثة من الإضافة.',
+                agentRankingsTitle: 'ترتيب أداء الوكلاء (Agent Rankings)',
+                satisfiedLabel: 'عملاء راضون (Good 4-5★)',
+                unsatisfiedLabel: 'عملاء غير راضين (Bad 1-3★)',
+                
+                // Status Pills
+                statusExcellent: 'ممتاز 🟢',
+                statusNeedsFollowup: 'يحتاج متابعة 🟡',
+                statusFast: 'سريع وممتاز 🟢 (إيجابي)',
+                statusNormal: 'معدل طبيعي 🟡 (مقبول)',
+                statusSlow: 'سلبي (بطيء) 🔴',
+                statusOnTime: 'ملتزم 🟢',
+                statusLate: 'متأخر 🔴',
+                statusZeroBreaches: 'صفر تجاوزات 🟢',
+                statusBreached: 'تجاوز مسجل 🔴',
+                
+                // Footer
+                footerNotice: 'تُسحب البيانات حصرياً من Google Sheets وتُغذى من إضافة المتصفح دون تكرار. تُحفظ السجلات في ورقة Historical_Archive و Drill_Archive.',
+                
+                // Switch button
+                langSwitchBtn: 'English',
+                langSwitchTitle: 'Switch language to English'
+            }
+        },
+        t(key, params = {}) {
+            const lang = this.currentLang || 'en';
+            let text = this.translations[lang]?.[key] || this.translations['en']?.[key] || key;
+            for (const [pKey, pVal] of Object.entries(params)) {
+                text = text.replace(new RegExp(`\\{${pKey}\\}`, 'g'), pVal);
+            }
+            return text;
+        },
+        init(lang) {
+            this.setLang(lang || 'en', false);
+        },
+        setLang(lang, reRender = true) {
+            this.currentLang = lang;
+            try {
+                localStorage.setItem('agent_dashboard_lang', lang);
+            } catch (e) {}
+
+            document.documentElement.lang = lang;
+            document.documentElement.dir = (lang === 'ar' ? 'rtl' : 'ltr');
+
+            // Update language toggle button label and title
+            const labelEl = el('currentLangLabel');
+            const btnToggle = el('btnLangToggle');
+            if (labelEl) labelEl.textContent = (lang === 'ar' ? 'English' : 'العربية');
+            if (btnToggle) btnToggle.title = this.t('langSwitchTitle');
+
+            // Update all DOM elements with data-i18n attributes
+            document.querySelectorAll('[data-i18n]').forEach(elem => {
+                const k = elem.getAttribute('data-i18n');
+                elem.textContent = this.t(k);
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(elem => {
+                const k = elem.getAttribute('data-i18n-placeholder');
+                elem.placeholder = this.t(k);
+            });
+            document.querySelectorAll('[data-i18n-title]').forEach(elem => {
+                const k = elem.getAttribute('data-i18n-title');
+                elem.title = this.t(k);
+            });
+
+            if (reRender && AppState.agents.length > 0) {
+                populateDropdowns();
+                renderResultsList();
+                renderDetailView();
+                if (AppState.currentMainTab === 'stats') {
+                    renderAnalyticsView();
+                }
+            }
+        }
+    };
+
+    const AppState = {
+        agents: [],
+        filteredAgents: [],
+        historicalDays: [],
+        chartDatePreset: 'recent',
+        chartStartDate: '',
+        chartEndDate: '',
+        selectedAgent: '', // '' = All Agents
+        selectedMetric: 'all',
+        drillRecords: {},
+        activeDrillData: null,
+        searchQuery: '',
+        page: 0,
+        pageSize: 100,
+        sortCol: null,
+        sortAsc: true,
+        drillSortCol: null,
+        drillSortAsc: true,
+        currentMainTab: 'data',
+        currentChartTab: 'sessions',
+        chartDisplayMode: 'bar', // 'bar' (default) or 'line'
+        detailFilters: {
+            datePreset: 'all',
+            csatScore: 'all',
+            channel: 'all',
+            topSessions: 'all',
+            breachOnly: 'all'
+        }
+    };
+
+    /**
+     * احتساب درجة ترتيب الحالة للمقاييس الفردية
+     */
+    function getStatusSortScore(agent, metric) {
+        if (!agent) return 0;
+        if (metric === 'csat') return agent.csat || 0;
+        if (metric === 'abst') return -parseTimeToSeconds(agent.abst);
+        if (metric === 'lateness') return -(agent.lateness || 0);
+        if (metric === 'breakBreach') return -(parseInt(agent.breakBreach) || 0);
+        if (metric === 'productivity') return parseFloat(String(agent.productivity || '0').replace('%', '')) || 0;
+        return 0;
+    }
+
+    /**
+     * تحويل الوقت بصيغة (mm:ss أو ثواني) إلى رقم ثواني نقي لسهولة المقارنة والترتيب
+     */
+    function parseTimeToSeconds(timeStr) {
+        if (!timeStr) return 999999;
+        const str = String(timeStr).trim();
+        if (str.includes(':')) {
+            const parts = str.split(':');
+            return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+        }
+        const num = parseFloat(str);
+        return isNaN(num) ? 999999 : num * 60;
+    }
+
+    const el = id => document.getElementById(id);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initApp();
+    });
+
+    function initApp() {
+        let savedLang = 'en';
+        try {
+            savedLang = localStorage.getItem('agent_dashboard_lang') || 'en';
+        } catch (e) {}
+
+        I18N.init(savedLang);
+        setupTabNavigation();
+        setupChartTabs();
+        setupEventListeners();
+        loadSheetData();
+    }
+
+    function setupTabNavigation() {
+        const tabData = el('tabDataView');
+        const tabStats = el('tabStatsView');
+        const viewData = el('viewDataSection');
+        const viewStats = el('viewStatsSection');
+
+        if (tabData && tabStats && viewData && viewStats) {
+            tabData.addEventListener('click', () => {
+                tabData.classList.add('active');
+                tabData.setAttribute('aria-selected', 'true');
+                tabStats.classList.remove('active');
+                tabStats.setAttribute('aria-selected', 'false');
+                viewData.hidden = false;
+                viewStats.hidden = true;
+                AppState.currentMainTab = 'data';
+            });
+
+            tabStats.addEventListener('click', () => {
+                tabStats.classList.add('active');
+                tabStats.setAttribute('aria-selected', 'true');
+                tabData.classList.remove('active');
+                tabData.setAttribute('aria-selected', 'false');
+                viewData.hidden = true;
+                viewStats.hidden = false;
+                AppState.currentMainTab = 'stats';
+                renderAnalyticsView();
+            });
+        }
+    }
+
+    function setupChartTabs() {
+        document.querySelectorAll('.chart-tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.chart-tab-btn').forEach(b => {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-selected', 'false');
+                });
+                const target = e.currentTarget || e.target;
+                target.classList.add('active');
+                target.setAttribute('aria-selected', 'true');
+                AppState.currentChartTab = target.getAttribute('data-chart') || 'sessions';
+                renderSvgChart();
+            });
+        });
+
+        // Chart Display Mode Toggle (Bars vs Line)
+        const btnBar = el('btnChartModeBar');
+        const btnLine = el('btnChartModeLine');
+        if (btnBar) {
+            btnBar.addEventListener('click', () => {
+                AppState.chartDisplayMode = 'bar';
+                btnBar.classList.add('active');
+                if (btnLine) btnLine.classList.remove('active');
+                renderSvgChart();
+            });
+        }
+        if (btnLine) {
+            btnLine.addEventListener('click', () => {
+                AppState.chartDisplayMode = 'line';
+                btnLine.classList.add('active');
+                if (btnBar) btnBar.classList.remove('active');
+                renderSvgChart();
+            });
+        }
+
+        // منتقي نطاق تاريخ المخطط
+        const datePresetSelect = el('chartDateRangePreset');
+        const customWrap = el('chartCustomCalendarWrap');
+        if (datePresetSelect) {
+            datePresetSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                AppState.chartDatePreset = val;
+                if (customWrap) {
+                    customWrap.style.display = val === 'custom' ? 'inline-flex' : 'none';
+                    if (val === 'custom') {
+                        const startInput = el('chartStartDate');
+                        const endInput = el('chartEndDate');
+                        if (startInput && !startInput.value) startInput.value = '2026-09-08';
+                        if (endInput && !endInput.value) endInput.value = '2026-09-16';
+                        AppState.chartStartDate = startInput?.value || '';
+                        AppState.chartEndDate = endInput?.value || '';
+                    }
+                }
+                renderSvgChart();
+            });
+        }
+
+        const btnApplyCustom = el('btnApplyChartCustomDates');
+        if (btnApplyCustom) {
+            btnApplyCustom.addEventListener('click', () => {
+                AppState.chartStartDate = el('chartStartDate')?.value || '';
+                AppState.chartEndDate = el('chartEndDate')?.value || '';
+                renderSvgChart();
+            });
+        }
+
+        const startInput = el('chartStartDate');
+        const endInput = el('chartEndDate');
+        if (startInput) {
+            startInput.addEventListener('change', () => {
+                AppState.chartStartDate = startInput.value;
+                renderSvgChart();
+            });
+        }
+        if (endInput) {
+            endInput.addEventListener('change', () => {
+                AppState.chartEndDate = endInput.value;
+                renderSvgChart();
+            });
+        }
+    }
+
+    function setupEventListeners() {
+        // زر تبديل اللغة الفوري (English / العربية)
+        const btnLangToggle = el('btnLangToggle');
+        if (btnLangToggle) {
+            btnLangToggle.addEventListener('click', () => {
+                const nextLang = I18N.currentLang === 'en' ? 'ar' : 'en';
+                I18N.setLang(nextLang, true);
+            });
+        }
+
+        // زر التحديث المباشر من الشيت
+        const btnRefresh = el('btnRefreshSheet');
+        if (btnRefresh) {
+            btnRefresh.addEventListener('click', loadSheetData);
+        }
+
+        // زر العودة لجميع الوكلاء (يظهر في وضع الوكيل الفردي)
+        const btnBackToAll = el('btnBackToAllAgents');
+        if (btnBackToAll) {
+            btnBackToAll.addEventListener('click', () => {
+                AppState.selectedAgent = '';
+                const agentSel = el('agent');
+                if (agentSel) agentSel.value = '';
+                AppState.page = 0;
+                AppState.searchQuery = '';
+                if (el('search')) el('search').value = '';
+                resetDetailFilters();
+                renderResultsList();
+                renderDetailView();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        }
+
+        // منتقي المقياس العلوي في وضع جميع الوكلاء
+        const topMetricSel = el('topMetricSelect');
+        if (topMetricSel) {
+            topMetricSel.addEventListener('change', (e) => {
+                AppState.selectedMetric = e.target.value;
+                const sidebarMetric = el('metric');
+                if (sidebarMetric) sidebarMetric.value = e.target.value;
+                AppState.page = 0;
+                renderDetailView();
+            });
+        }
+
+        // منتقي الوكيل في الشريط الجانبي
+        const agentSelect = el('agent');
+        if (agentSelect) {
+            agentSelect.addEventListener('change', (e) => {
+                AppState.selectedAgent = e.target.value;
+                AppState.page = 0;
+                AppState.searchQuery = '';
+                if (el('search')) el('search').value = '';
+                resetDetailFilters();
+                renderResultsList();
+                renderDetailView();
+            });
+        }
+
+        // منتقي المقياس في الشريط الجانبي
+        const metricSelect = el('metric');
+        if (metricSelect) {
+            metricSelect.addEventListener('change', (e) => {
+                AppState.selectedMetric = e.target.value;
+                const topSelect = el('topMetricSelect');
+                if (topSelect) topSelect.value = e.target.value;
+                AppState.page = 0;
+                AppState.searchQuery = '';
+                if (el('search')) el('search').value = '';
+                resetDetailFilters();
+                renderResultsList();
+                renderDetailView();
+            });
+        }
+
+        // منتقي الوكيل في تبويب الإحصائيات
+        const analyticsAgentSelect = el('analyticsAgentSelect');
+        if (analyticsAgentSelect) {
+            analyticsAgentSelect.addEventListener('change', () => {
+                renderAnalyticsView();
+            });
+        }
+
+        // شريط البحث داخل الجدول
+        const searchInput = el('search');
+        const clearBtn = el('clearSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                AppState.searchQuery = (e.target.value || '').trim().toLowerCase();
+                AppState.page = 0;
+                if (clearBtn) clearBtn.hidden = !AppState.searchQuery;
+                renderDetailTableOnly();
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                AppState.searchQuery = '';
+                clearBtn.hidden = true;
+                AppState.page = 0;
+                renderDetailTableOnly();
+            });
+        }
+
+        // أزرار التنقل بين الصفحات
+        const prevBtn = el('previous');
+        const nextBtn = el('next');
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (AppState.page > 0) {
+                    AppState.page--;
+                    renderDetailTableOnly();
+                }
+            });
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                AppState.page++;
+                renderDetailTableOnly();
+            });
+        }
+
+        // زر تصدير CSV
+        const csvBtn = el('csv');
+        if (csvBtn) {
+            csvBtn.addEventListener('click', downloadTableCsv);
+        }
+
+        // زر إعادة تعيين الفلاتر
+        const resetFiltersBtn = el('resetMetricFiltersBtn');
+        if (resetFiltersBtn) {
+            resetFiltersBtn.addEventListener('click', () => {
+                resetDetailFilters();
+                renderMetricFilterToolbar(AppState.selectedMetric);
+                renderDetailTableOnly();
+            });
+        }
+    }
+
+    function resetDetailFilters() {
+        AppState.detailFilters = {
+            datePreset: 'all',
+            csatScore: 'all',
+            channel: 'all',
+            topSessions: 'all',
+            breachOnly: 'all'
+        };
+        const badge = el('filterActiveBadge');
+        if (badge) badge.hidden = true;
+    }
+
+    function loadSheetData() {
+        const label = el('cloudStatusLabel');
+        if (label) label.textContent = I18N.t('cloudUpdating');
+        message(I18N.t('cloudUpdating'));
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(handleSheetDataSuccess)
+                .withFailureHandler(handleSheetDataError)
+                .getDashboardDataFromSheet();
+        } else {
+            // وضع المعاينة المحلي (Local Preview Mode)
+            setTimeout(loadLocalPreviewMode, 400);
+        }
+    }
+
+    function handleSheetDataSuccess(response) {
+        const label = el('cloudStatusLabel');
+        if (label) label.textContent = I18N.t('cloudRefresh');
+
+        if (!response || !response.success || response.isEmpty || !response.agents || response.agents.length === 0) {
+            AppState.agents = [];
+            el('empty').hidden = false;
+            el('detail').hidden = true;
+            updateTopStats({ totalAgents: 0, totalDrillRows: 0 });
+            message(response?.message || I18N.t('emptyDataDesc'), true);
+            return;
+        }
+
+        AppState.agents = response.agents;
+        if (response.historicalDays && Array.isArray(response.historicalDays) && response.historicalDays.length > 0) {
+            AppState.historicalDays = response.historicalDays;
+        }
+        el('empty').hidden = true;
+        el('detail').hidden = false;
+
+        updateTopStats(response.summary);
+        populateDropdowns();
+        renderResultsList();
+        renderDetailView();
+
+        message(I18N.t('dataLoadedSuccess', { count: AppState.agents.length }));
+    }
+
+    function handleSheetDataError(err) {
+        const label = el('cloudStatusLabel');
+        if (label) label.textContent = I18N.t('cloudRefresh');
+        message(I18N.t('loadFailed') + err.message, true);
+    }
+
+    function updateTopStats(summary) {
+        el('agentCount').textContent = summary?.totalAgents || AppState.agents.length;
+        el('rowCount').textContent = summary?.totalDrillRows || (AppState.agents.length * 7);
+        const badge = el('statsTabBadge');
+        if (badge) badge.textContent = AppState.agents.length;
+    }
+
+    function populateDropdowns() {
+        const agentSel = el('agent');
+        const analyticsSel = el('analyticsAgentSelect');
+        if (!agentSel) return;
+
+        const currentVal = agentSel.value;
+        agentSel.innerHTML = `<option value="">${I18N.t('sidebarAllAgentsOption')}</option>`;
+        if (analyticsSel) analyticsSel.innerHTML = `<option value="">${I18N.t('analyticsAllAgentsOption')}</option>`;
+
+        AppState.agents.forEach(a => {
+            const opt = new Option(`${a.name} (${a.email})`, a.email);
+            agentSel.add(opt);
+            if (analyticsSel) analyticsSel.add(new Option(`${a.name} (${a.email})`, a.email));
+        });
+
+        if (currentVal && AppState.agents.some(a => a.email === currentVal)) {
+            agentSel.value = currentVal;
+            AppState.selectedAgent = currentVal;
+        }
+    }
+
+    /**
+     * بناء قائمة النتائج في الشريط الجانبي الأيسر
+     */
+    function renderResultsList() {
+        const container = el('results');
+        if (!container) return;
+
+        container.innerHTML = '';
+        const matchCountBadge = el('resultMatchCount');
+
+        // إذا كان المختار "كل الوكلاء"
+        if (!AppState.selectedAgent) {
+            if (matchCountBadge) matchCountBadge.textContent = `${AppState.agents.length} ${I18N.t('agentUnit')}`;
+
+            const allBtn = document.createElement('button');
+            allBtn.className = 'result-card' + (!AppState.selectedAgent ? ' active' : '');
+            allBtn.innerHTML = `
+                <div class="result-card-header">
+                    <span class="metric-pill" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">All Agents</span>
+                    <span class="badge subtle">${AppState.agents.length} ${I18N.t('agentUnit')}</span>
+                </div>
+                <span class="agent-name" style="font-weight: 700; color: #fff;">👥 ${I18N.t('allAgentsTitle')}</span>
+                <small style="color: var(--muted);">${I18N.t('allAgentsMeta', { metric: 'All' })}</small>
+            `;
+            allBtn.addEventListener('click', () => {
+                AppState.selectedAgent = '';
+                el('agent').value = '';
+                renderResultsList();
+                renderDetailView();
+            });
+            container.appendChild(allBtn);
+
+            AppState.agents.forEach((agent, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'result-card';
+                btn.innerHTML = `
+                    <div class="result-card-header">
+                        <span class="metric-pill" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">${agent.csat}% CSAT</span>
+                        <span class="badge subtle">#${idx + 1}</span>
+                    </div>
+                    <span class="agent-name">${agent.name}</span>
+                    <small style="color: var(--muted);">${agent.email}</small>
+                `;
+                btn.addEventListener('click', () => {
+                    AppState.selectedAgent = agent.email;
+                    el('agent').value = agent.email;
+                    renderResultsList();
+                    renderDetailView();
+                });
+                container.appendChild(btn);
+            });
+            return;
+        }
+
+        // إذا كان تم اختيار وكيل محدد
+        const currentAgent = AppState.agents.find(a => a.email === AppState.selectedAgent);
+        if (matchCountBadge) matchCountBadge.textContent = `1 ${I18N.t('agentUnit')}`;
+
+        // بطاقة العودة لجدول جميع الوكلاء في أعلى القائمة الجانبية
+        const backToAllBtn = document.createElement('button');
+        backToAllBtn.className = 'result-card back-card';
+        backToAllBtn.style.background = 'rgba(56, 189, 248, 0.12)';
+        backToAllBtn.style.border = '1px dashed rgba(56, 189, 248, 0.4)';
+        backToAllBtn.style.marginBottom = '12px';
+        backToAllBtn.innerHTML = `
+            <div class="result-card-header">
+                <span class="metric-pill" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">All Agents</span>
+                <span class="badge subtle" style="color:#38bdf8;">${I18N.currentLang === 'ar' ? 'عودة' : 'Back'}</span>
+            </div>
+            <span class="agent-name" style="font-weight: 700; color: #38bdf8;">${I18N.t('sidebarBackToAll')}</span>
+            <small style="color: var(--muted);">${I18N.t('sidebarBackToAllDesc')}</small>
+        `;
+        backToAllBtn.addEventListener('click', () => {
+            AppState.selectedAgent = '';
+            const agentSel = el('agent');
+            if (agentSel) agentSel.value = '';
+            AppState.page = 0;
+            renderResultsList();
+            renderDetailView();
+        });
+        container.appendChild(backToAllBtn);
+
+        const metricsList = [
+            { key: 'all', label: 'All Metrics' },
+            { key: 'csat', label: 'CSAT' },
+            { key: 'agbt', label: 'AGBT' },
+            { key: 'abst', label: 'ABST' },
+            { key: 'breakBreach', label: 'Break breach' },
+            { key: 'lateness', label: 'Lateness' },
+            { key: 'idle', label: 'Idle' },
+            { key: 'productivity', label: 'Productivity' }
+        ];
+
+        metricsList.forEach(m => {
+            const btn = document.createElement('button');
+            const isActive = AppState.selectedMetric === m.key;
+            btn.className = 'result-card' + (isActive ? ' active' : '');
+            btn.innerHTML = `
+                <div class="result-card-header">
+                    <span class="metric-pill">${m.key.toUpperCase()}</span>
+                    <span class="badge subtle">${I18N.t('btnDetails')}</span>
+                </div>
+                <span class="agent-name">${m.label}</span>
+                <small style="color: var(--muted);">${currentAgent?.name || AppState.selectedAgent}</small>
+            `;
+            btn.addEventListener('click', () => {
+                AppState.selectedMetric = m.key;
+                el('metric').value = m.key;
+                renderResultsList();
+                renderDetailView();
+            });
+            container.appendChild(btn);
+        });
+    }
+
+    /**
+     * بناء قسم التفاصيل (Detail View)
+     */
+    function renderDetailView() {
+        const isAllAgents = !AppState.selectedAgent;
+        const metric = AppState.selectedMetric || 'all';
+
+        const sidebar = el('sidebarPanel');
+        const workspace = el('workspaceContainer');
+        const btnBack = el('btnBackToAllAgents');
+        const topMetricWrap = el('topMetricFilterWrap');
+
+        if (isAllAgents) {
+            // إخفاء الحانة/القائمة الجانبية تماماً وتوسيع جدول المقارنة ليشغل 100% من العرض
+            if (sidebar) sidebar.style.display = 'none';
+            if (workspace) workspace.classList.add('all-agents-view');
+            if (btnBack) btnBack.style.display = 'none';
+            if (topMetricWrap) topMetricWrap.style.display = 'block';
+            if (el('topMetricSelect')) el('topMetricSelect').value = metric;
+            if (el('agent')) el('agent').value = '';
+
+            el('detailAgent').textContent = I18N.t('allAgentsTitle');
+            el('detailMetric').textContent = METRIC_LABELS[metric] || 'All';
+            el('colCountBadge').textContent = `${AppState.agents.length} ${I18N.t('agentUnit')}`;
+            el('meta').textContent = I18N.t('allAgentsMeta', { metric: METRIC_LABELS[metric] || 'All' });
+            el('metricFilterToolbar').hidden = true;
+            renderMetricSummaryBarAllAgents(metric);
+            renderDetailTableOnly();
+        } else {
+            // إظهار الحانة/القائمة الجانبية مع إمكانية التبديل بين مقاييس الوكيل المختار
+            if (sidebar) sidebar.style.display = 'block';
+            if (workspace) workspace.classList.remove('all-agents-view');
+            if (btnBack) btnBack.style.display = 'inline-flex';
+            if (topMetricWrap) topMetricWrap.style.display = 'none';
+            if (el('agent')) el('agent').value = AppState.selectedAgent;
+            if (el('metric')) el('metric').value = metric;
+
+            const agent = AppState.agents.find(a => a.email === AppState.selectedAgent) || { name: AppState.selectedAgent, email: AppState.selectedAgent };
+            el('detailAgent').textContent = agent.name;
+            el('detailMetric').textContent = METRIC_LABELS[metric] || metric;
+            el('colCountBadge').textContent = agent.email;
+            el('meta').textContent = I18N.t('agentMeta', { email: agent.email });
+            renderMetricSummaryBarSingleAgent(agent, metric);
+            renderMetricFilterToolbar(metric);
+            loadSingleAgentDrills(agent.email, metric);
+        }
+    }
+
+    /**
+     * شريط فلاتر الجداول المتقدمة (Table Filters Toolbar)
+     */
+    function renderMetricFilterToolbar(metric) {
+        const toolbar = el('metricFilterToolbar');
+        const grid = el('filterControlsGrid');
+        if (!toolbar || !grid) return;
+
+        toolbar.hidden = false;
+        grid.innerHTML = '';
+
+        // 1. فلتر نطاق التاريخ
+        const dateGroup = document.createElement('div');
+        dateGroup.className = 'filter-group';
+        dateGroup.innerHTML = `
+            <label>${I18N.t('filterDateRange')}</label>
+            <select id="fltDate">
+                <option value="all">${I18N.t('filterAllPeriod')}</option>
+                <option value="today">${I18N.t('filterToday')}</option>
+                <option value="yesterday">${I18N.t('filterYesterday')}</option>
+                <option value="week">${I18N.t('filterThisWeek')}</option>
+            </select>
+        `;
+        dateGroup.querySelector('select').value = AppState.detailFilters.datePreset;
+        dateGroup.querySelector('select').addEventListener('change', (e) => {
+            AppState.detailFilters.datePreset = e.target.value;
+            AppState.page = 0;
+            renderDetailTableOnly();
+        });
+        grid.appendChild(dateGroup);
+
+        // 2. فلتر تقييم CSAT
+        if (metric === 'csat' || metric === 'all') {
+            const csatGroup = document.createElement('div');
+            csatGroup.className = 'filter-group';
+            csatGroup.innerHTML = `
+                <label>${I18N.t('filterCsat')}</label>
+                <select id="fltCsat">
+                    <option value="all">${I18N.t('filterAllCsat')}</option>
+                    <option value="good">${I18N.t('filterGoodCsat')}</option>
+                    <option value="bad">${I18N.t('filterBadCsat')}</option>
+                </select>
+            `;
+            csatGroup.querySelector('select').value = AppState.detailFilters.csatScore;
+            csatGroup.querySelector('select').addEventListener('change', (e) => {
+                AppState.detailFilters.csatScore = e.target.value;
+                AppState.page = 0;
+                renderDetailTableOnly();
+            });
+            grid.appendChild(csatGroup);
+        }
+
+        // 3. فلتر القناة
+        const chanGroup = document.createElement('div');
+        chanGroup.className = 'filter-group';
+        chanGroup.innerHTML = `
+            <label>${I18N.t('filterChannel')}</label>
+            <select id="fltChannel">
+                <option value="all">${I18N.t('filterAllChannels')}</option>
+                <option value="Chat">${I18N.t('filterChat')}</option>
+                <option value="WhatsApp">${I18N.t('filterWhatsApp')}</option>
+                <option value="Email">${I18N.t('filterEmail')}</option>
+            </select>
+        `;
+        chanGroup.querySelector('select').value = AppState.detailFilters.channel;
+        chanGroup.querySelector('select').addEventListener('change', (e) => {
+            AppState.detailFilters.channel = e.target.value;
+            AppState.page = 0;
+            renderDetailTableOnly();
+        });
+        grid.appendChild(chanGroup);
+
+        // 4. فلتر الجلسات
+        if (metric === 'agbt' || metric === 'abst') {
+            const topGroup = document.createElement('div');
+            topGroup.className = 'filter-group';
+            topGroup.innerHTML = `
+                <label>${I18N.t('filterTopSessions')}</label>
+                <select id="fltTop">
+                    <option value="all">${I18N.t('filterAllSessions')}</option>
+                    <option value="top5">${I18N.t('filterTop5')}</option>
+                    <option value="top10">${I18N.t('filterTop10')}</option>
+                </select>
+            `;
+            topGroup.querySelector('select').value = AppState.detailFilters.topSessions;
+            topGroup.querySelector('select').addEventListener('change', (e) => {
+                AppState.detailFilters.topSessions = e.target.value;
+                AppState.page = 0;
+                renderDetailTableOnly();
+            });
+            grid.appendChild(topGroup);
+        }
+    }
+
+    function renderMetricSummaryBarAllAgents(metric) {
+        const bar = el('metricSummary');
+        if (!bar) return;
+
+        let totalCsat = 0, countCsat = 0;
+        let totalLate = 0;
+        let totalBreaches = 0;
+
+        AppState.agents.forEach(a => {
+            if (a.csat > 0) { totalCsat += a.csat; countCsat++; }
+            totalLate += a.lateness || 0;
+            totalBreaches += parseInt(a.breakBreach) || 0;
+        });
+
+        const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : '—';
+        const unitMin = I18N.t('unitMinutes');
+
+        bar.innerHTML = `
+            <div class="summary-pill"><span class="pill-label">${I18N.t('totalAgentsLabel')}</span> <b class="pill-value">${AppState.agents.length}</b></div>
+            <div class="summary-pill"><span class="pill-label">${I18N.t('teamAvgCsatLabel')}</span> <b class="pill-value" style="color:#10b981;">${avgCsat}%</b></div>
+            <div class="summary-pill"><span class="pill-label">${I18N.t('totalLatenessLabel')}</span> <b class="pill-value" style="color:#f87171;">${totalLate.toFixed(1)} ${unitMin}</b></div>
+            <div class="summary-pill"><span class="pill-label">${I18N.t('totalBreachesLabel')}</span> <b class="pill-value" style="color:#f59e0b;">${totalBreaches}</b></div>
+        `;
+    }
+
+    function renderMetricSummaryBarSingleAgent(agent, metric) {
+        const bar = el('metricSummary');
+        if (!bar) return;
+
+        const unitMin = I18N.t('unitMinutes');
+        const latenessLabel = I18N.currentLang === 'ar' ? 'تأخير:' : 'Lateness:';
+        const breachLabel = I18N.currentLang === 'ar' ? 'تجاوزات بريك:' : 'Break Breach:';
+        const prodLabel = I18N.currentLang === 'ar' ? 'الإنتاجية:' : 'Productivity:';
+
+        bar.innerHTML = `
+            <div class="summary-pill"><span class="pill-label">CSAT:</span> <b class="pill-value" style="color:#10b981;">${agent.csat}%</b></div>
+            <div class="summary-pill"><span class="pill-label">AGBT:</span> <b class="pill-value" style="color:#38bdf8;">${agent.agbt}</b></div>
+            <div class="summary-pill"><span class="pill-label">ABST:</span> <b class="pill-value" style="color:#a78bfa;">${agent.abst}</b></div>
+            <div class="summary-pill"><span class="pill-label">${latenessLabel}</span> <b class="pill-value" style="color:#f87171;">${agent.lateness} ${unitMin}</b></div>
+            <div class="summary-pill"><span class="pill-label">${breachLabel}</span> <b class="pill-value" style="color:#f59e0b;">${agent.breakBreach}</b></div>
+            <div class="summary-pill"><span class="pill-label">${prodLabel}</span> <b class="pill-value" style="color:#06b6d4;">${agent.productivity}</b></div>
+        `;
+    }
+
+    function renderDetailTableOnly() {
+        const head = el('head');
+        const body = el('body');
+        const matchCount = el('matchCount');
+        const noRows = el('noRows');
+        const pageBadge = el('page');
+
+        if (!head || !body) return;
+
+        if (!AppState.selectedAgent) {
+            renderAllAgentsComparisonTable(head, body, matchCount, noRows, pageBadge);
+        } else {
+            renderSingleAgentDrillTable(head, body, matchCount, noRows, pageBadge);
+        }
+    }
+
+    /**
+     * جدول مقارنة جميع الوكلاء (Unified All Agents Comparison Table)
+     */
+    function renderAllAgentsComparisonTable(head, body, matchCount, noRows, pageBadge) {
+        const metric = AppState.selectedMetric;
+
+        head.innerHTML = '';
+        const trHead = document.createElement('tr');
+        
+        let columns = [];
+        if (metric === 'all') {
+            columns = [
+                { key: 'index', label: I18N.t('colIndex') },
+                { key: 'name', label: I18N.t('colName') },
+                { key: 'email', label: I18N.t('colEmail') },
+                { key: 'csat', label: I18N.t('colCsat') },
+                { key: 'agbt', label: I18N.t('colAgbt') },
+                { key: 'abst', label: I18N.t('colAbst') },
+                { key: 'breakBreach', label: I18N.t('colBreakBreach') },
+                { key: 'lateness', label: I18N.t('colLateness') },
+                { key: 'idle', label: I18N.t('colIdle') },
+                { key: 'productivity', label: I18N.t('colProductivity') },
+                { key: null, label: I18N.t('colAction') }
+            ];
+        } else {
+            columns = [
+                { key: 'index', label: I18N.t('colIndex') },
+                { key: 'name', label: I18N.t('colName') },
+                { key: 'email', label: I18N.t('colEmail') },
+                { key: 'metricVal', label: I18N.t('colMetricVal', { metric: METRIC_LABELS[metric] }) },
+                { key: 'status', label: I18N.t('colStatus') },
+                { key: null, label: I18N.t('colAction') }
+            ];
+        }
+
+        columns.forEach(colObj => {
+            const th = document.createElement('th');
+            if (colObj.key) {
+                const isSorted = AppState.sortCol === colObj.key;
+                th.className = 'sortable' + (isSorted ? (AppState.sortAsc ? ' sorted-asc' : ' sorted-desc') : '');
+                th.style.cursor = 'pointer';
+                const icon = isSorted ? (AppState.sortAsc ? ' ▲' : ' ▼') : ' ↕';
+                th.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; justify-content:space-between; width:100%;">
+                    <span>${colObj.label}</span>
+                    <span class="sort-icon" style="font-size:11px; opacity:${isSorted ? '1' : '0.45'}; color:${isSorted ? 'var(--blue)' : 'inherit'};">${icon}</span>
+                </span>`;
+                th.addEventListener('click', () => {
+                    if (AppState.sortCol === colObj.key) {
+                        AppState.sortAsc = !AppState.sortAsc;
+                    } else {
+                        AppState.sortCol = colObj.key;
+                        AppState.sortAsc = (colObj.key === 'abst' || colObj.key === 'agbt' || colObj.key === 'lateness' || colObj.key === 'breakBreach' || colObj.key === 'index');
+                    }
+                    renderDetailTableOnly();
+                });
+            } else {
+                th.textContent = colObj.label;
+            }
+            trHead.appendChild(th);
+        });
+        head.appendChild(trHead);
+
+        const q = AppState.searchQuery;
+        let visibleAgents = AppState.agents.filter(a => {
+            if (!q) return true;
+            return a.name.toLowerCase().includes(q) ||
+                   a.email.toLowerCase().includes(q) ||
+                   String(a.csat).includes(q) ||
+                   String(a.abst).includes(q) ||
+                   String(a.agbt).includes(q) ||
+                   String(a.lateness).includes(q);
+        });
+
+        // تطبيق الترتيب التصاعدي أو التنازلي
+        if (AppState.sortCol) {
+            visibleAgents.sort((a, b) => {
+                let va, vb;
+                if (AppState.sortCol === 'index') {
+                    va = AppState.agents.indexOf(a);
+                    vb = AppState.agents.indexOf(b);
+                } else if (AppState.sortCol === 'metricVal') {
+                    va = a[metric] ?? a.csat;
+                    vb = b[metric] ?? b.csat;
+                } else if (AppState.sortCol === 'status') {
+                    va = getStatusSortScore(a, metric);
+                    vb = getStatusSortScore(b, metric);
+                } else {
+                    va = a[AppState.sortCol];
+                    vb = b[AppState.sortCol];
+                }
+
+                if (AppState.sortCol === 'abst' || AppState.sortCol === 'agbt' || (typeof va === 'string' && va.includes(':'))) {
+                    va = parseTimeToSeconds(va);
+                    vb = parseTimeToSeconds(vb);
+                } else if (AppState.sortCol === 'productivity') {
+                    va = parseFloat(String(va || '0').replace('%', '')) || 0;
+                    vb = parseFloat(String(vb || '0').replace('%', '')) || 0;
+                } else if (AppState.sortCol === 'idle') {
+                    va = parseFloat(String(va || '0').replace(/[^0-9.-]/g, '')) || 0;
+                    vb = parseFloat(String(vb || '0').replace(/[^0-9.-]/g, '')) || 0;
+                } else if (typeof va === 'number' || (!isNaN(parseFloat(va)) && !String(va).includes('@'))) {
+                    va = parseFloat(va) || 0;
+                    vb = parseFloat(vb) || 0;
+                } else {
+                    va = String(va || '').toLowerCase();
+                    vb = String(vb || '').toLowerCase();
+                }
+
+                if (va < vb) return AppState.sortAsc ? -1 : 1;
+                if (va > vb) return AppState.sortAsc ? 1 : -1;
+                return 0;
+            });
+        }
+
+        if (matchCount) matchCount.textContent = `${visibleAgents.length} ${I18N.t('agentUnit')}`;
+        if (noRows) noRows.hidden = visibleAgents.length > 0;
+
+        const start = AppState.page * AppState.pageSize;
+        const pagedAgents = visibleAgents.slice(start, start + AppState.pageSize);
+        const totalPages = Math.max(1, Math.ceil(visibleAgents.length / AppState.pageSize));
+        if (pageBadge) pageBadge.textContent = `${AppState.page + 1} / ${totalPages}`;
+
+        body.innerHTML = '';
+        const unitMin = I18N.t('unitMinutes');
+
+        pagedAgents.forEach((agent, i) => {
+            const tr = document.createElement('tr');
+            const rowNum = start + i + 1;
+
+            if (metric === 'all') {
+                const csatPill = agent.csat >= 90 ? `<span class="badge badge-success">${agent.csat}%</span>` : `<span class="badge badge-warning">${agent.csat}%</span>`;
+                const latePill = agent.lateness === 0 ? `<span style="color:#10b981;">0 ${unitMin}</span>` : `<span style="color:#f87171;font-weight:700;">${agent.lateness} ${unitMin}</span>`;
+
+                const abstSecs = parseTimeToSeconds(agent.abst);
+                let abstPill = '';
+                if (abstSecs <= 90) {
+                    abstPill = `<span style="color:#10b981; font-weight:700;">${agent.abst} 🟢</span>`;
+                } else if (abstSecs <= 150) {
+                    abstPill = `<span style="color:#f59e0b; font-weight:600;">${agent.abst} 🟡</span>`;
+                } else {
+                    abstPill = `<span style="color:#f87171; font-weight:700;">${agent.abst} 🔴</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="color:var(--muted);">${rowNum}</td>
+                    <td style="font-weight:600; color:#fff;">${agent.name}</td>
+                    <td style="font-family:monospace; color:var(--muted);">${agent.email}</td>
+                    <td>${csatPill}</td>
+                    <td style="color:#38bdf8;">${agent.agbt}</td>
+                    <td>${abstPill}</td>
+                    <td>${agent.breakBreach}</td>
+                    <td>${latePill}</td>
+                    <td>${agent.idle}</td>
+                    <td style="color:#06b6d4;">${agent.productivity}</td>
+                    <td><button class="button btn-sm" onclick="selectAgentFromTable('${agent.email}')">${I18N.t('btnDetails')}</button></td>
+                `;
+            } else {
+                let metricValDisplay = '—';
+                let statusBadge = `<span class="badge subtle">${I18N.t('statusNormal')}</span>`;
+
+                if (metric === 'csat') {
+                    metricValDisplay = `${agent.csat}%`;
+                    statusBadge = agent.csat >= 90 ? `<span class="badge badge-success">${I18N.t('statusExcellent')}</span>` : `<span class="badge badge-warning">${I18N.t('statusNeedsFollowup')}</span>`;
+                } else if (metric === 'agbt') {
+                    metricValDisplay = agent.agbt;
+                    statusBadge = `<span class="badge subtle" style="color:#38bdf8;">${I18N.t('statusNormal')}</span>`;
+                } else if (metric === 'abst') {
+                    const secs = parseTimeToSeconds(agent.abst);
+                    metricValDisplay = agent.abst;
+                    if (secs > 0 && secs <= 90) {
+                        statusBadge = `<span class="badge badge-success">${I18N.t('statusFast')}</span>`;
+                    } else if (secs > 0 && secs <= 150) {
+                        statusBadge = `<span class="badge badge-warning">${I18N.t('statusNormal')}</span>`;
+                    } else if (secs > 150) {
+                        statusBadge = `<span class="badge badge-danger">${I18N.t('statusSlow')}</span>`;
+                    }
+                } else if (metric === 'lateness') {
+                    metricValDisplay = `${agent.lateness} ${unitMin}`;
+                    statusBadge = agent.lateness === 0 ? `<span class="badge badge-success">${I18N.t('statusOnTime')}</span>` : `<span class="badge badge-danger">${I18N.t('statusLate')}</span>`;
+                } else if (metric === 'breakBreach') {
+                    metricValDisplay = `${agent.breakBreach} ${I18N.t('unitTimes')}`;
+                    statusBadge = parseInt(agent.breakBreach) === 0 ? `<span class="badge badge-success">${I18N.t('statusZeroBreaches')}</span>` : `<span class="badge badge-danger">${I18N.t('statusBreached')}</span>`;
+                } else if (metric === 'idle') {
+                    metricValDisplay = agent.idle;
+                    statusBadge = `<span class="badge subtle">${I18N.t('statusNormal')}</span>`;
+                } else if (metric === 'productivity') {
+                    metricValDisplay = agent.productivity;
+                    statusBadge = parseFloat(agent.productivity) >= 90 ? `<span class="badge badge-success">${I18N.t('statusExcellent')}</span>` : `<span class="badge badge-warning">${I18N.t('statusNeedsFollowup')}</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="color:var(--muted);">${rowNum}</td>
+                    <td style="font-weight:600; color:#fff;">${agent.name}</td>
+                    <td style="font-family:monospace; color:var(--muted);">${agent.email}</td>
+                    <td style="font-weight:700; color:#38bdf8; font-size:14px;">${metricValDisplay}</td>
+                    <td>${statusBadge}</td>
+                    <td><button class="button btn-sm" onclick="selectAgentFromTable('${agent.email}')">${I18N.t('btnViewTickets')}</button></td>
+                `;
+            }
+            body.appendChild(tr);
+        });
+    }
+
+    /**
+     * جدول تفاصيل سجلات الوكيل الفردي (Single Agent Drill Table)
+     */
+    function renderSingleAgentDrillTable(head, body, matchCount, noRows, pageBadge) {
+        const data = AppState.activeDrillData;
+
+        if (!data || !data.found || !data.rows || data.rows.length === 0) {
+            head.innerHTML = '';
+            body.innerHTML = `
+                <tr>
+                    <td colspan="10" style="text-align:center; padding:45px 20px; color:var(--muted);">
+                        <div style="font-size:32px; margin-bottom:10px;">📭</div>
+                        <strong style="font-size:15px; color:#fff; display:block; margin-bottom:6px;">
+                            ${I18N.t('noDrillRecordsTitle', { metric: METRIC_LABELS[AppState.selectedMetric] || AppState.selectedMetric })}
+                        </strong>
+                        <span style="font-size:13px; color:var(--muted);">
+                            ${I18N.t('noDrillRecordsSub')}
+                        </span>
+                    </td>
+                </tr>`;
+            if (matchCount) matchCount.textContent = '0';
+            if (pageBadge) pageBadge.textContent = '1 / 1';
+            return;
+        }
+
+        const rawHeader = data.header || [];
+        const rawRows = data.rows || [];
+
+        head.innerHTML = '';
+        const trHead = document.createElement('tr');
+        rawHeader.forEach((colName, colIdx) => {
+            const th = document.createElement('th');
+            const isSorted = AppState.drillSortCol === colIdx;
+            th.className = 'sortable' + (isSorted ? (AppState.drillSortAsc ? ' sorted-asc' : ' sorted-desc') : '');
+            th.style.cursor = 'pointer';
+            const icon = isSorted ? (AppState.drillSortAsc ? ' ▲' : ' ▼') : ' ↕';
+            th.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; justify-content:space-between; width:100%;">
+                <span>${colName}</span>
+                <span class="sort-icon" style="font-size:11px; opacity:${isSorted ? '1' : '0.45'}; color:${isSorted ? 'var(--blue)' : 'inherit'};">${icon}</span>
+            </span>`;
+            th.addEventListener('click', () => {
+                if (AppState.drillSortCol === colIdx) {
+                    AppState.drillSortAsc = !AppState.drillSortAsc;
+                } else {
+                    AppState.drillSortCol = colIdx;
+                    AppState.drillSortAsc = true;
+                }
+                renderDetailTableOnly();
+            });
+            trHead.appendChild(th);
+        });
+        head.appendChild(trHead);
+
+        const q = AppState.searchQuery;
+        const fltCsat = AppState.detailFilters.csatScore;
+        const fltChan = AppState.detailFilters.channel;
+
+        let visibleRows = rawRows.filter(r => {
+            const rowStr = r.join(' ').toLowerCase();
+            if (q && !rowStr.includes(q)) return false;
+            if (fltCsat === 'good' && !rowStr.includes('good') && !rowStr.includes('5') && !rowStr.includes('4')) return false;
+            if (fltCsat === 'bad' && !rowStr.includes('bad') && !rowStr.includes('1') && !rowStr.includes('2')) return false;
+            if (fltChan !== 'all' && !rowStr.includes(fltChan.toLowerCase())) return false;
+            return true;
+        });
+
+        if (AppState.drillSortCol !== null) {
+            visibleRows.sort((a, b) => {
+                let va = a[AppState.drillSortCol];
+                let vb = b[AppState.drillSortCol];
+                if (typeof va === 'string' && va.includes(':')) {
+                    va = parseTimeToSeconds(va);
+                    vb = parseTimeToSeconds(vb);
+                } else if (!isNaN(parseFloat(va)) && !String(va).includes('#') && !String(va).includes('-')) {
+                    va = parseFloat(va);
+                    vb = parseFloat(vb);
+                } else {
+                    va = String(va || '').toLowerCase();
+                    vb = String(vb || '').toLowerCase();
+                }
+                if (va < vb) return AppState.drillSortAsc ? -1 : 1;
+                if (va > vb) return AppState.drillSortAsc ? 1 : -1;
+                return 0;
+            });
+        }
+
+        if (matchCount) matchCount.textContent = `${visibleRows.length} ${I18N.currentLang === 'ar' ? 'صف' : 'rows'}`;
+        if (noRows) noRows.hidden = visibleRows.length > 0;
+
+        const start = AppState.page * AppState.pageSize;
+        const pagedRows = visibleRows.slice(start, start + AppState.pageSize);
+        const totalPages = Math.max(1, Math.ceil(visibleRows.length / AppState.pageSize));
+        if (pageBadge) pageBadge.textContent = `${AppState.page + 1} / ${totalPages}`;
+
+        body.innerHTML = '';
+        pagedRows.forEach(rowCells => {
+            const tr = document.createElement('tr');
+            rowCells.forEach(cell => {
+                const td = document.createElement('td');
+                const cellStr = String(cell);
+                if (cellStr.toLowerCase() === 'good' || cellStr === '5' || cellStr === '4') {
+                    td.innerHTML = `<span class="badge badge-success">${cellStr}</span>`;
+                } else if (cellStr.toLowerCase() === 'bad' || cellStr === '1' || cellStr === '2') {
+                    td.innerHTML = `<span class="badge badge-danger">${cellStr}</span>`;
+                } else {
+                    td.textContent = cellStr;
+                }
+                tr.appendChild(td);
+            });
+            body.appendChild(tr);
+        });
+    }
+
+    window.selectAgentFromTable = (email) => {
+        AppState.selectedAgent = email;
+        const agentSel = el('agent');
+        if (agentSel) agentSel.value = email;
+        renderResultsList();
+        renderDetailView();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    function downloadTableCsv() {
+        const table = el('dataTable');
+        if (!table) return;
+
+        let csv = '';
+        const rows = table.querySelectorAll('tr');
+        rows.forEach(r => {
+            const cells = [...r.querySelectorAll('th, td')].map(c => `"${c.innerText.replace(/"/g, '""')}"`);
+            csv += cells.join(',') + '\r\n';
+        });
+
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Agent_Metrics_${(AppState.selectedAgent || 'All_Agents').replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    function loadSingleAgentDrills(email, metric) {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler((drillRes) => {
+                    AppState.activeDrillData = drillRes;
+                    renderDetailTableOnly();
+                })
+                .withFailureHandler(() => {
+                    AppState.activeDrillData = generateSampleDrills(email, metric);
+                    renderDetailTableOnly();
+                })
+                .getAgentDrillRowsFromSheet(email, metric);
+        } else {
+            AppState.activeDrillData = generateSampleDrills(email, metric);
+            renderDetailTableOnly();
+        }
+    }
+
+    function generateSampleDrills(email, metric) {
+        const isAr = I18N.currentLang === 'ar';
+        const headers = isAr
+            ? ['رقم التذكرة', 'التاريخ والوقت', 'القناة', 'التقييم', 'الموضوع', 'ملاحظات']
+            : ['Ticket ID', 'Date & Time', 'Channel', 'Rating', 'Subject', 'Notes'];
+
+        return {
+            found: true,
+            header: headers,
+            rows: [
+                ['#TCK-8401', '2026-09-16 10:15', 'Chat', 'Good', isAr ? 'استفسار عن عملية دفع' : 'Payment inquiry', isAr ? 'خدمة سريعة' : 'Quick resolution'],
+                ['#TCK-8402', '2026-09-16 11:20', 'WhatsApp', 'Good', isAr ? 'تأكيد الحساب' : 'Account confirmation', isAr ? 'ممتاز' : 'Excellent service'],
+                ['#TCK-8403', '2026-09-16 13:45', 'Email', 'Bad', isAr ? 'تأخر في معالجة الطلب' : 'Order processing delay', isAr ? 'تأخر الرد' : 'Delayed response']
+            ]
+        };
+    }
+
+    /**
+     * شاشة الإحصائيات المتقدمة والرسوم البيانية (Analytics View)
+     */
+    function renderAnalyticsView() {
+        if (!AppState.agents || AppState.agents.length === 0) return;
+
+        let totalCsat = 0, countCsat = 0, highCsatCount = 0;
+        let totalLate = 0;
+        let totalBreaches = 0;
+
+        AppState.agents.forEach(a => {
+            if (a.csat > 0) {
+                totalCsat += a.csat;
+                countCsat++;
+                if (a.csat >= 90) highCsatCount++;
+            }
+            totalLate += a.lateness || 0;
+            totalBreaches += parseInt(a.breakBreach) || 0;
+        });
+
+        const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : 0;
+        const unitMin = I18N.t('unitMinutes');
+        const unitTimes = I18N.t('unitTimes');
+
+        if (el('kpiCsatVal')) el('kpiCsatVal').textContent = `${avgCsat}%`;
+        if (el('kpiCsatFill')) el('kpiCsatFill').style.width = `${avgCsat}%`;
+
+        if (el('kpiLatenessVal')) el('kpiLatenessVal').textContent = `${totalLate.toFixed(1)} ${unitMin}`;
+        if (el('kpiLatenessFill')) el('kpiLatenessFill').style.width = `${Math.min(100, (totalLate / (AppState.agents.length * 10)) * 100)}%`;
+
+        if (el('kpiBreachVal')) el('kpiBreachVal').textContent = `${totalBreaches} ${unitTimes}`;
+        if (el('kpiBreachFill')) el('kpiBreachFill').style.width = `${Math.min(100, (totalBreaches / (AppState.agents.length * 3)) * 100)}%`;
+
+        if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = AppState.agents[0]?.agbt || '03:30';
+        if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = '65%';
+
+        if (el('kpiIdleVal')) el('kpiIdleVal').textContent = AppState.agents[0]?.idle || '15m';
+        if (el('kpiIdleFill')) el('kpiIdleFill').style.width = '30%';
+
+        // 2. الشريط الثانوي (Secondary Quick Stats Strip)
+        const totalEstimatedSessions = AppState.agents.length * 28;
+        if (el('secStatTotalSessions')) el('secStatTotalSessions').textContent = `${totalEstimatedSessions} ${I18N.t('unitSessions')}`;
+        if (el('secStatDailyAvg')) el('secStatDailyAvg').textContent = `${Math.round(totalEstimatedSessions / 7)} ${I18N.t('unitDailyAvg')}`;
+        if (el('secStatActiveDays')) el('secStatActiveDays').textContent = `7 ${I18N.t('unitDays')}`;
+        if (el('secStatLongSessions')) el('secStatLongSessions').textContent = `${Math.round(totalEstimatedSessions * 0.05)} ${I18N.t('unitSessions')}`;
+
+        // 3. رسم المخطط البياني التفاعلي SVG للأيام والسيشنات ومعدل ABST
+        renderSvgChart();
+
+        // 4. تصنيف CSAT
+        const csatBox = el('csatBreakdownBody');
+        if (csatBox) {
+            const highPct = countCsat > 0 ? Math.round((highCsatCount / countCsat) * 100) : 0;
+            csatBox.innerHTML = `
+                <div style="margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <span>${I18N.t('csatDistributionSub')}</span>
+                        <strong style="color:#10b981;">${highPct}% (${highCsatCount} / ${countCsat})</strong>
+                    </div>
+                    <div class="kpi-bar-track"><div class="kpi-bar-fill emerald" style="width:${highPct}%;"></div></div>
+                </div>
+                <div style="font-size:12px; color:var(--muted); line-height:1.6;">
+                    ${I18N.t('csatNote')}
+                </div>
+            `;
+        }
+
+        // 5. ترتيب أداء الوكلاء
+        const rankList = el('agentsCompareList');
+        if (rankList) {
+            rankList.innerHTML = '';
+            const sortedAgents = [...AppState.agents].sort((a, b) => b.csat - a.csat).slice(0, 10);
+            sortedAgents.forEach((a, idx) => {
+                const item = document.createElement('div');
+                item.className = 'rank-item';
+                item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid var(--border-subtle);';
+                item.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="badge" style="background:var(--panel-sub); color:#fff; font-weight:700;">#${idx + 1}</span>
+                        <div>
+                            <strong style="color:#fff; display:block; font-size:13px;">${a.name}</strong>
+                            <span style="color:var(--muted); font-size:11px;">${a.email}</span>
+                        </div>
+                    </div>
+                    <div style="text-align:inherit;">
+                        <span class="badge badge-success" style="font-weight:700;">${a.csat}% CSAT</span>
+                    </div>
+                `;
+                rankList.appendChild(item);
+            });
+        }
+    }
+
+    /**
+     * رسم المخطط البياني التفاعلي SVG للسيشنات ومعدل ABST عبر الأيام
+     */
+    function renderSvgChart() {
+        const wrap = el('analyticsChartWrap');
+        const badgeDays = el('chartActiveDaysCountBadge');
+        if (!wrap) return;
+
+        const chartType = AppState.currentChartTab || 'sessions';
+        const datePreset = AppState.chartDatePreset || 'recent';
+        const displayMode = AppState.chartDisplayMode || 'bar';
+
+        if (el('btnChartModeBar')) el('btnChartModeBar').classList.toggle('active', displayMode === 'bar');
+        if (el('btnChartModeLine')) el('btnChartModeLine').classList.toggle('active', displayMode === 'line');
+
+        const allRecordedDays = (AppState.historicalDays && AppState.historicalDays.length > 0)
+            ? AppState.historicalDays
+            : [
+                { day: '2026-09-08', sessions: 135, abstSecs: 78, agbtSecs: 225, csat: 93, long: 4 },
+                { day: '2026-09-09', sessions: 142, abstSecs: 75, agbtSecs: 215, csat: 94, long: 6 },
+                { day: '2026-09-10', sessions: 155, abstSecs: 82, agbtSecs: 240, csat: 72, long: 8 },
+                { day: '2026-09-11', sessions: 168, abstSecs: 78, agbtSecs: 230, csat: 88, long: 12 },
+                { day: '2026-09-12', sessions: 160, abstSecs: 85, agbtSecs: 255, csat: 68, long: 10 },
+                { day: '2026-09-13', sessions: 0,   abstSecs: 0,  agbtSecs: 0,   csat: 0,  long: 0 },
+                { day: '2026-09-14', sessions: 178, abstSecs: 70, agbtSecs: 205, csat: 82, long: 9 },
+                { day: '2026-09-15', sessions: 195, abstSecs: 68, agbtSecs: 195, csat: 95, long: 7 },
+                { day: '2026-09-16', sessions: 210, abstSecs: 65, agbtSecs: 190, csat: 96, long: 5 }
+            ];
+
+        let activeDays = allRecordedDays.filter(d => Number(d.sessions) > 0 && (Number(d.abstSecs) > 0 || Number(d.agbtSecs) > 0 || Number(d.csat) > 0));
+        activeDays.sort((a, b) => a.day.localeCompare(b.day));
+
+        if (datePreset === 'week') {
+            activeDays = activeDays.slice(-7);
+        } else if (datePreset === 'month') {
+            activeDays = activeDays.slice(-30);
+        } else if (datePreset === 'custom' && AppState.chartStartDate && AppState.chartEndDate) {
+            activeDays = activeDays.filter(d => d.day >= AppState.chartStartDate && d.day <= AppState.chartEndDate);
+        } else {
+            activeDays = activeDays.slice(-8);
+        }
+
+        if (badgeDays) {
+            badgeDays.textContent = I18N.t('activeDaysBadge', { count: activeDays.length });
+        }
+
+        if (activeDays.length === 0) {
+            wrap.innerHTML = `<div style="text-align:center; padding:50px; color:var(--muted);">${I18N.t('noMatchingRows')}</div>`;
+            return;
+        }
+
+        const days = activeDays.map(d => d.day.slice(5));
+        let values = [];
+        let unit = '';
+        let chartColor = '#38bdf8';
+
+        // Helper for CSAT dynamic coloring: >=90 Green, <75 Red, between Yellow
+        function getCsatColor(score) {
+            if (score >= 90) return '#10b981'; // Green (>= 90%)
+            if (score < 75) return '#ef4444';  // Red (< 75%)
+            return '#f59e0b';                  // Yellow/Amber (75% <= score < 90%)
+        }
+
+        if (chartType === 'sessions') {
+            values = activeDays.map(d => d.sessions);
+            unit = I18N.t('unitSessions');
+            chartColor = '#38bdf8';
+            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendSessions');
+            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#38bdf8';
+        } else if (chartType === 'abst') {
+            // ABST is strictly Orange
+            values = activeDays.map(d => d.abstSecs || 0);
+            unit = I18N.currentLang === 'ar' ? 'د' : 'min';
+            chartColor = '#f97316'; // Orange
+            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendAbst');
+            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#f97316';
+        } else if (chartType === 'agbt') {
+            // AGBT is strictly Blue
+            values = activeDays.map(d => d.agbtSecs || 0);
+            unit = I18N.currentLang === 'ar' ? 'د' : 'min';
+            chartColor = '#0ea5e9'; // Blue
+            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendAgbt');
+            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#0ea5e9';
+        } else if (chartType === 'csat') {
+            values = activeDays.map(d => d.csat || 0);
+            unit = '%';
+            chartColor = '#10b981';
+            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendCsat');
+            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#10b981';
+        } else {
+            values = activeDays.map(d => d.long || 0);
+            unit = I18N.t('unitSessions');
+            chartColor = '#ef4444';
+            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendLong');
+            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#ef4444';
+        }
+
+        const count = values.length;
+        const maxVal = Math.max(...values, 1) * 1.18;
+        const minVal = 0;
+        const total = values.reduce((a, b) => a + b, 0);
+        const avgVal = (total / count).toFixed(1);
+
+        function formatDisplayVal(val) {
+            if (chartType === 'abst' || chartType === 'agbt') {
+                const m = Math.floor(val / 60);
+                const s = Math.round(val % 60);
+                return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+            if (chartType === 'csat') return `${val}%`;
+            return `${val}`;
+        }
+
+        let benchmarkText = `${avgVal} ${unit}`;
+        if (chartType === 'abst' || chartType === 'agbt') {
+            const mins = Math.floor(avgVal / 60);
+            const secs = Math.round(avgVal % 60);
+            const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            benchmarkText = I18N.currentLang === 'ar' ? `${formatted} د` : `${formatted} min`;
+        } else if (chartType === 'csat') {
+            benchmarkText = `${avgVal}%`;
+        }
+        if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = benchmarkText;
+
+        const width = 800;
+        const height = 240;
+        const padX = 55;
+        const padY = 34;
+        const chartW = width - padX * 2;
+        const chartH = height - padY * 2;
+
+        if (displayMode === 'bar') {
+            // ========================================================
+            // BAR CHART MODE (Default)
+            // ========================================================
+            const barW = Math.min(36, Math.max(14, (chartW / count) * 0.58));
+            let bars = '';
+            values.forEach((val, i) => {
+                const x = count === 1
+                    ? padX + chartW / 2 - barW / 2
+                    : padX + (i / count) * chartW + ((chartW / count) - barW) / 2;
+                const bHeight = Math.max(4, ((val - minVal) / (maxVal - minVal || 1)) * chartH);
+                const y = height - padY - bHeight;
+
+                let barColor = chartColor;
+                if (chartType === 'csat') {
+                    barColor = getCsatColor(val);
+                }
+
+                const displayVal = formatDisplayVal(val);
+                bars += `
+                    <g class="chart-bar-group" tabindex="0">
+                        <title>${days[i]}: ${displayVal}</title>
+                        <rect x="${x}" y="${y}" width="${barW}" height="${bHeight}" rx="4" fill="${barColor}" opacity="0.9"></rect>
+                        <text x="${x + barW / 2}" y="${y - 7}" fill="#f8fafc" font-size="10.5" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${displayVal}</text>
+                        <text x="${x + barW / 2}" y="${height - 12}" fill="var(--muted)" font-size="11" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${days[i]}</text>
+                    </g>
+                `;
+            });
+
+            const avgY = height - padY - ((avgVal - minVal) / (maxVal - minVal || 1)) * chartH;
+            wrap.innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;">
+                    <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--border)" stroke-width="1.5"></line>
+                    <line x1="${padX}" y1="${avgY}" x2="${width - padX}" y2="${avgY}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.8"></line>
+                    <text x="${width - padX - 14}" y="${avgY - 6}" fill="#fbbf24" font-size="10.5" font-weight="700" font-family="'JetBrains Mono', 'Inter', sans-serif" text-anchor="${I18N.currentLang === 'ar' ? 'start' : 'end'}">${I18N.currentLang === 'ar' ? 'المتوسط: ' : 'Average: '}${benchmarkText}</text>
+                    ${bars}
+                </svg>
+            `;
+        } else {
+            // ========================================================
+            // LINE CHART MODE
+            // ========================================================
+            const isTimeMetric = (chartType === 'abst' || chartType === 'agbt');
+            const linePoints = values.map((val, i) => {
+                const x = padX + (chartW / Math.max(1, count - 1)) * i;
+                const ratio = (val - minVal) / (maxVal - minVal || 1);
+                // For time metrics (ABST/AGBT): slower/higher time dips DOWN, faster time rises UP
+                const y = isTimeMetric ? padY + ratio * chartH : height - padY - ratio * chartH;
+                return { x, y, val, day: days[i], fullDay: activeDays[i].day, displayVal: formatDisplayVal(val) };
+            });
+
+            const pathD = linePoints.reduce((acc, pt, i) => {
+                if (i === 0) return `M ${pt.x} ${pt.y}`;
+                const prev = linePoints[i - 1];
+                const cx = (prev.x + pt.x) / 2;
+                return `${acc} C ${cx} ${prev.y}, ${cx} ${pt.y}, ${pt.x} ${pt.y}`;
+            }, '');
+
+            const fillD = `${pathD} L ${linePoints[linePoints.length - 1].x} ${height - padY} L ${linePoints[0].x} ${height - padY} Z`;
+            const avgRatio = (avgVal - minVal) / (maxVal - minVal || 1);
+            const avgY = isTimeMetric ? padY + avgRatio * chartH : height - padY - avgRatio * chartH;
+
+            let circles = '';
+            linePoints.forEach((pt) => {
+                let pointColor = chartColor;
+                if (chartType === 'csat') {
+                    pointColor = getCsatColor(pt.val);
+                }
+                const textY = (isTimeMetric && pt.y < padY + 18) ? pt.y + 18 : pt.y - 10;
+                circles += `
+                    <g class="chart-point-group" tabindex="0">
+                        <title>${pt.day}: ${pt.displayVal}</title>
+                        <circle cx="${pt.x}" cy="${pt.y}" r="5" fill="${pointColor}" stroke="#0b1329" stroke-width="2" class="chart-dot"></circle>
+                        <text x="${pt.x}" y="${textY}" fill="#f8fafc" font-size="11" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${pt.displayVal}</text>
+                        <text x="${pt.x}" y="${height - 12}" fill="var(--muted)" font-size="11" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${pt.day}</text>
+                    </g>
+                `;
+            });
+
+            wrap.innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;">
+                    <defs>
+                        <linearGradient id="chartGradDynamic" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="${chartColor}" stop-opacity="0.35"></stop>
+                            <stop offset="100%" stop-color="${chartColor}" stop-opacity="0.0"></stop>
+                        </linearGradient>
+                    </defs>
+                    <path d="${fillD}" fill="url(#chartGradDynamic)"></path>
+                    <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--border)" stroke-width="1.5"></line>
+                    <line x1="${padX}" y1="${avgY}" x2="${width - padX}" y2="${avgY}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.75"></line>
+                    <text x="${width - padX - 14}" y="${avgY - 6}" fill="#fbbf24" font-size="10.5" font-weight="700" font-family="'JetBrains Mono', 'Inter', sans-serif" text-anchor="${I18N.currentLang === 'ar' ? 'start' : 'end'}">${I18N.currentLang === 'ar' ? 'المتوسط: ' : 'Average: '}${benchmarkText}</text>
+                    <path d="${pathD}" fill="none" stroke="${chartColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+                    ${circles}
+                </svg>
+            `;
+        }
+    }
+
+    function loadLocalPreviewMode() {
+        const mockAgents = [
+            { name: 'سلطان العتيبي', email: 'sultan.o@company.com', csat: 95.2, agbt: '03:45', abst: '01:20', breakBreach: '0', lateness: 0, idle: '12m', productivity: '96%' },
+            { name: 'أحمد الشهري', email: 'ahmed.sh@company.com', csat: 89.5, agbt: '04:15', abst: '02:05', breakBreach: '1', lateness: 15, idle: '25m', productivity: '88%' },
+            { name: 'فاطمة القحطاني', email: 'fatimah.q@company.com', csat: 98.0, agbt: '03:10', abst: '00:55', breakBreach: '0', lateness: 0, idle: '08m', productivity: '98%' },
+            { name: 'محمد الحربي', email: 'mohammed.h@company.com', csat: 91.0, agbt: '04:30', abst: '01:45', breakBreach: '2', lateness: 5, idle: '18m', productivity: '92%' },
+            { name: 'نورة الدوسري', email: 'noura.d@company.com', csat: 96.5, agbt: '03:25', abst: '01:10', breakBreach: '0', lateness: 0, idle: '10m', productivity: '95%' },
+            { name: 'خالد المطيري', email: 'khaled.m@company.com', csat: 82.0, agbt: '05:10', abst: '02:50', breakBreach: '3', lateness: 25, idle: '40m', productivity: '79%' },
+            { name: 'سارة الغامدي', email: 'sara.gh@company.com', csat: 95.0, agbt: '03:50', abst: '01:15', breakBreach: '0', lateness: 0, idle: '14m', productivity: '94%' }
+        ];
+
+        handleSheetDataSuccess({
+            success: true,
+            agents: mockAgents,
+            summary: { totalAgents: mockAgents.length, totalDrillRows: mockAgents.length * 7 },
+            historicalDays: [
+                { day: '2026-09-08', sessions: 135, abstSecs: 78, agbtSecs: 225, csat: 93, long: 4 },
+                { day: '2026-09-09', sessions: 142, abstSecs: 75, agbtSecs: 215, csat: 94, long: 6 },
+                { day: '2026-09-10', sessions: 155, abstSecs: 82, agbtSecs: 240, csat: 72, long: 8 },
+                { day: '2026-09-11', sessions: 168, abstSecs: 78, agbtSecs: 230, csat: 88, long: 12 },
+                { day: '2026-09-12', sessions: 160, abstSecs: 85, agbtSecs: 255, csat: 68, long: 10 },
+                { day: '2026-09-13', sessions: 0,   abstSecs: 0,  agbtSecs: 0,   csat: 0,  long: 0 },
+                { day: '2026-09-14', sessions: 178, abstSecs: 70, agbtSecs: 205, csat: 82, long: 9 },
+                { day: '2026-09-15', sessions: 195, abstSecs: 68, agbtSecs: 195, csat: 95, long: 7 },
+                { day: '2026-09-16', sessions: 210, abstSecs: 65, agbtSecs: 190, csat: 96, long: 5 }
+            ]
+        });
+    }
+
+    function message(text, isError = false) {
+        const s = el('status');
+        if (!s) return;
+        s.textContent = text;
+        s.style.color = isError ? 'var(--danger)' : 'var(--text-sub)';
+    }
+
+})();
+</script>

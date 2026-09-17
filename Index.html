@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0f1d">
+    <title>Agent Dashboard — Results & Performance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- تضمين التنسيقات المطابقة لـ agent-dashboard-viewer تماماً -->
+    <?!= include('Styles'); ?>
+</head>
+<body>
+<main class="shell">
+    <header class="topbar">
+        <div>
+            <div class="brand-badge"><span class="badge-dot"></span> FAST TOOLKIT / GOOGLE APPS SCRIPT</div>
+            <h1 dir="ltr">Agent Dashboard</h1>
+            <p class="muted" id="topbarSubtitle" data-i18n="appSubtitle">Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.</p>
+        </div>
+        <div class="topbar-actions">
+            <button id="btnLangToggle" class="button lang-toggle-btn" type="button" title="Switch Language to Arabic / تغيير اللغة للعربية">
+                <span class="lang-icon">🌐</span>
+                <span id="currentLangLabel">العربية</span>
+            </button>
+            <button id="btnRefreshSheet" class="button cloud-badge connected" type="button" title="Refresh data directly from Google Sheet" data-i18n-title="cloudRefresh">
+                <span class="cloud-dot"></span>
+                <span class="cloud-label" id="cloudStatusLabel" data-i18n="cloudRefresh">🔄 Refresh from Google Sheet</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Notice Banner -->
+    <p id="status" class="status" role="status" aria-live="polite" data-i18n="readyStatus">Ready.</p>
+
+    <!-- Main View Switcher Tabs (Internal Navigation) -->
+    <nav class="main-view-tabs" role="tablist" aria-label="Dashboard Sections">
+        <button type="button" class="main-view-tab-btn active" role="tab" id="tabDataView" aria-selected="true" aria-controls="viewDataSection">
+            <span class="tab-icon" aria-hidden="true">📋</span>
+            <span data-i18n="tabDataView">Results & Data Table</span>
+        </button>
+        <button type="button" class="main-view-tab-btn" role="tab" id="tabStatsView" aria-selected="false" aria-controls="viewStatsSection">
+            <span class="tab-icon" aria-hidden="true">📊</span>
+            <span data-i18n="tabStatsView">Performance Analytics & Charts</span>
+            <span class="tab-badge" id="statsTabBadge">0</span>
+        </button>
+    </nav>
+
+    <!-- 1. Data & Tables Workspace View -->
+    <div id="viewDataSection" class="view-panel-section">
+        <section class="stats" aria-label="Sheet Summary">
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-icon">📁</span>
+                    <span data-i18n="statSheet">Worksheet</span>
+                </div>
+                <strong id="fileCount" style="font-size: 16px;">Daily_Summary</strong>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-icon">👤</span>
+                    <span data-i18n="statAgents">Agents</span>
+                </div>
+                <strong id="agentCount">0</strong>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-icon">📊</span>
+                    <span data-i18n="statMetrics">Metrics</span>
+                </div>
+                <strong id="resultCount">7</strong>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-icon">🔢</span>
+                    <span data-i18n="statRows">Recorded Rows</span>
+                </div>
+                <strong id="rowCount">0</strong>
+            </div>
+        </section>
+
+        <div class="workspace" id="workspaceContainer">
+            <!-- Left Side Panel: Results and Agents (Hidden in All Agents mode) -->
+            <aside class="panel results-panel" id="sidebarPanel">
+                <div class="panel-head">
+                    <h2 data-i18n="sidebarTitle">Metrics & Agent</h2>
+                    <span class="badge" id="resultMatchCount">0 Agents</span>
+                </div>
+                <div class="filter-group">
+                    <label for="agent" data-i18n="sidebarAgentLabel">Agent</label>
+                    <select id="agent">
+                        <option value="" data-i18n="sidebarAllAgentsOption">All Agents (Full Team)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="metric" data-i18n="sidebarMetricLabel">Metric</label>
+                    <select id="metric">
+                        <option value="all">All Metrics</option>
+                        <option value="csat">CSAT</option>
+                        <option value="agbt">AGBT</option>
+                        <option value="abst">ABST</option>
+                        <option value="breakBreach">Break breach</option>
+                        <option value="lateness">Lateness</option>
+                        <option value="idle">Idle</option>
+                        <option value="productivity">Productivity</option>
+                    </select>
+                </div>
+                <div id="results" class="result-list">
+                    <p class="muted empty-note">Agent results will appear here.</p>
+                </div>
+            </aside>
+
+            <!-- Right Main Panel: Details in One Place -->
+            <section class="panel data-panel" aria-label="Details Table">
+                
+                <!-- Empty state when no data in sheet -->
+                <div id="empty" class="empty">
+                    <div class="empty-icon-wrap" aria-hidden="true">
+                        <span class="empty-icon">▤</span>
+                    </div>
+                    <h2 data-i18n="emptyDataTitle">Details in One Place</h2>
+                    <p class="muted" data-i18n="emptyDataDesc">No data recorded in Google Sheet yet. Open the dashboard and use the extension to sync data.</p>
+                </div>
+
+                <!-- Detail Container (Active for both All Agents & Single Agent) -->
+                <div id="detail" hidden>
+                    <header class="detail-head">
+                        <div class="detail-title-block">
+                            <div class="detail-tags">
+                                <span class="metric-pill" id="detailMetric">All</span>
+                                <span class="badge subtle" id="colCountBadge">0 Agents</span>
+                            </div>
+                            <h2 id="detailAgent" dir="auto" data-i18n="allAgentsTitle">All Agents</h2>
+                            <p class="hint" id="meta" data-i18n="allAgentsMeta">Unified comparison table displaying direct metrics for all agents from Google Sheets</p>
+                        </div>
+                        <div class="detail-actions">
+                            <!-- زر العودة لجميع الوكلاء (يظهر فقط عند فتح تفاصيل وكيل محدد) -->
+                            <button type="button" id="btnBackToAllAgents" class="button" style="display:none; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.35);">
+                                <span class="btn-icon">👥</span> <span data-i18n="btnViewAllAgents">View All Agents Table</span>
+                            </button>
+                            <!-- منتقي المقياس السريع في وضع كل الوكلاء -->
+                            <div id="topMetricFilterWrap" class="filter-group" style="margin:0; min-width:180px;">
+                                <select id="topMetricSelect" style="padding:7px 12px; font-size:12px; background:var(--card); color:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); outline:none;">
+                                    <option value="all">All Metrics</option>
+                                    <option value="csat">CSAT</option>
+                                    <option value="agbt">AGBT</option>
+                                    <option value="abst">ABST</option>
+                                    <option value="breakBreach">Break breach</option>
+                                    <option value="lateness">Lateness</option>
+                                    <option value="idle">Idle</option>
+                                    <option value="productivity">Productivity</option>
+                                </select>
+                            </div>
+                            <button id="csv" class="button">
+                                <span class="btn-icon" aria-hidden="true">📥</span> <span data-i18n="btnDownloadCsv">Download CSV</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    <div id="metricSummary" class="metric-summary-bar"></div>
+
+                    <!-- Dynamic Metric Filter Toolbar (for single agent drill rows) -->
+                    <div id="metricFilterToolbar" class="metric-filter-toolbar" hidden>
+                        <div class="filter-toolbar-header">
+                            <div class="filter-title-wrap">
+                                <span class="filter-icon" aria-hidden="true">⚡</span>
+                                <span class="filter-title" id="filterToolbarTitle" data-i18n="filterToolbarTitle">Metric Filters</span>
+                                <span class="filter-active-pill" id="filterActiveBadge" hidden>0 active filters</span>
+                            </div>
+                            <button type="button" id="resetMetricFiltersBtn" class="btn-reset-filters" title="Reset all filters" data-i18n="filterReset">
+                                ↺ Reset Filters
+                            </button>
+                        </div>
+                        <div class="filter-controls-grid" id="filterControlsGrid">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Search Row -->
+                    <div class="search-row">
+                        <div class="search-input-wrap">
+                            <span class="search-icon" aria-hidden="true">🔍</span>
+                            <label for="search" class="sr-only">Search within rows</label>
+                            <input id="search" type="search" placeholder="Search in any column, agent name, or value..." data-i18n-placeholder="searchPlaceholder">
+                            <button type="button" id="clearSearch" class="clear-search-btn" title="Clear Search" hidden aria-label="Clear search">×</button>
+                        </div>
+                        <span class="hint match-tag" id="matchCount">0 rows</span>
+                    </div>
+
+                    <!-- Data Table -->
+                    <div class="table-wrap" tabindex="0" role="region" aria-label="Data Table">
+                        <table id="dataTable">
+                            <thead id="head"></thead>
+                            <tbody id="body"></tbody>
+                        </table>
+                    </div>
+
+                    <p id="noRows" class="muted empty-table-note" hidden data-i18n="noMatchingRows">No records match your search criteria.</p>
+
+                    <!-- Pagination -->
+                    <footer class="pagination">
+                        <button id="previous" class="button btn-sm" data-i18n="btnPrevious">Previous</button>
+                        <div class="page-indicator">
+                            <span class="page-badge" id="page">1 / 1</span>
+                        </div>
+                        <button id="next" class="button btn-sm" data-i18n="btnNext">Next</button>
+                    </footer>
+                </div>
+            </section>
+        </div>
+    </div> <!-- /viewDataSection -->
+
+    <!-- 2. Analytics & Statistics View (Exact Counter Statistics Architecture) -->
+    <section id="viewStatsSection" class="view-panel-section analytics-view-section" hidden aria-label="Performance Analytics & Charts">
+        <!-- Header & Agent Filter Bar -->
+        <div class="analytics-top-bar">
+            <div class="analytics-title-wrap">
+                <div class="analytics-title-row">
+                    <span class="analytics-title-icon" aria-hidden="true">📈</span>
+                    <h2 data-i18n="analyticsTitle">Live Performance Analytics & Charts</h2>
+                </div>
+                <p class="muted" data-i18n="analyticsSubtitle">Advanced dashboard displaying quality metrics, handling rates, customer satisfaction, and break breaches directly from Google Sheets.</p>
+            </div>
+            <div class="analytics-controls">
+                <div class="filter-group-inline">
+                    <label for="analyticsAgentSelect" data-i18n="analyticsFilterLabel">Show Analytics:</label>
+                    <select id="analyticsAgentSelect">
+                        <option value="" data-i18n="analyticsAllAgentsOption">All Agents (Team Total)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Content -->
+        <div id="analyticsContent">
+            <!-- Hero KPI Grid -->
+            <div class="analytics-hero-grid">
+                <!-- 1. CSAT Card -->
+                <div class="analytics-kpi-card" id="cardCsat">
+                    <div class="kpi-top">
+                        <span class="kpi-label" data-i18n="kpiCsatTitle">CSAT Satisfaction Rate</span>
+                        <span class="kpi-pill emerald" id="kpiCsatBadge" data-i18n="kpiCsatBadge">90%+ Target</span>
+                    </div>
+                    <b class="kpi-val emerald" id="kpiCsatVal">—</b>
+                    <span class="kpi-sub" id="kpiCsatSub" data-i18n="kpiCsatSub">Recorded customer satisfaction average</span>
+                    <div class="kpi-bar-track">
+                        <div class="kpi-bar-fill emerald" id="kpiCsatFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 2. AGBT Card -->
+                <div class="analytics-kpi-card" id="cardAgbt">
+                    <div class="kpi-top">
+                        <span class="kpi-label" data-i18n="kpiAgbtTitle">Average AGBT</span>
+                        <span class="kpi-pill blue" id="kpiAgbtBadge" data-i18n="kpiAgbtBadge">min/session</span>
+                    </div>
+                    <b class="kpi-val blue" id="kpiAgbtVal">—</b>
+                    <span class="kpi-sub" id="kpiAgbtSub" data-i18n="kpiAgbtSub">Average handling duration</span>
+                    <div class="kpi-bar-track">
+                        <div class="kpi-bar-fill blue" id="kpiAgbtFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 3. Break Exceed Card -->
+                <div class="analytics-kpi-card" id="cardBreach">
+                    <div class="kpi-top">
+                        <span class="kpi-label" data-i18n="kpiBreachTitle">Break Breaches</span>
+                        <span class="kpi-pill" id="kpiBreachBadge" data-i18n="kpiBreachBadge">Breaches</span>
+                    </div>
+                    <b class="kpi-val" id="kpiBreachVal">—</b>
+                    <span class="kpi-sub" id="kpiBreachSub" data-i18n="kpiBreachSub">Recorded break exceedances</span>
+                    <div class="kpi-bar-track">
+                        <div class="kpi-bar-fill" id="kpiBreachFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 4. Lateness Card -->
+                <div class="analytics-kpi-card" id="cardLateness">
+                    <div class="kpi-top">
+                        <span class="kpi-label" data-i18n="kpiLatenessTitle">Shift Lateness</span>
+                        <span class="kpi-pill amber" id="kpiLatenessBadge" data-i18n="kpiLatenessBadge">minutes</span>
+                    </div>
+                    <b class="kpi-val amber" id="kpiLatenessVal">—</b>
+                    <span class="kpi-sub" id="kpiLatenessSub" data-i18n="kpiLatenessSub">Minutes late from shift start</span>
+                    <div class="kpi-bar-track">
+                        <div class="kpi-bar-fill amber" id="kpiLatenessFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 5. Idle Time Card -->
+                <div class="analytics-kpi-card" id="cardIdle">
+                    <div class="kpi-top">
+                        <span class="kpi-label" data-i18n="kpiIdleTitle">Non-Productive / Idle Hours</span>
+                        <span class="kpi-pill amber" id="kpiIdleBadge" data-i18n="kpiIdleBadge">Idle</span>
+                    </div>
+                    <b class="kpi-val amber" id="kpiIdleVal">—</b>
+                    <span class="kpi-sub" id="kpiIdleSub" data-i18n="kpiIdleSub">Unutilized logged time</span>
+                    <div class="kpi-bar-track">
+                        <div class="kpi-bar-fill amber" id="kpiIdleFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Secondary Quick Stats Strip -->
+            <div class="analytics-secondary-strip" style="margin-top: 20px;">
+                <div class="sec-stat-box">
+                    <span class="sec-label" data-i18n="secTotalSessions">Total Sessions & Tickets:</span>
+                    <b class="sec-val" id="secStatTotalSessions">0 sessions</b>
+                </div>
+                <div class="sec-stat-box">
+                    <span class="sec-label" data-i18n="secDailyAvg">Daily Average Sessions:</span>
+                    <b class="sec-val" id="secStatDailyAvg">0 sessions/day</b>
+                </div>
+                <div class="sec-stat-box">
+                    <span class="sec-label" data-i18n="secActiveDays">Recorded Work Days:</span>
+                    <b class="sec-val" id="secStatActiveDays">0 days</b>
+                </div>
+                <div class="sec-stat-box">
+                    <span class="sec-label" data-i18n="secLongSessions">Sessions ≥ 20 mins:</span>
+                    <b class="sec-val" id="secStatLongSessions">0 sessions</b>
+                </div>
+            </div>
+
+            <!-- SVG Interactive Chart Section -->
+            <section class="analytics-card chart-section-card" style="margin-top: 24px;" aria-labelledby="chartTitle">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title" id="chartTitle">
+                            <span>📈</span>
+                            <span data-i18n="chartSectionTitle">Daily Performance & ABST Trend Chart</span>
+                        </h3>
+                        <p class="chart-subtitle" id="chartSubtitle" data-i18n="chartSectionSubtitle">Track your daily productivity, session volume, and average ABST across active days</p>
+                    </div>
+                    <div class="chart-tabs" role="tablist" aria-label="Select Chart Type">
+                        <button type="button" class="chart-tab-btn active" role="tab" aria-selected="true" data-chart="sessions" data-i18n="chartTabSessions">Daily Sessions</button>
+                        <button type="button" class="chart-tab-btn" role="tab" aria-selected="false" data-chart="abst" data-i18n="chartTabAbst">ABST Rate</button>
+                        <button type="button" class="chart-tab-btn" role="tab" aria-selected="false" data-chart="agbt" data-i18n="chartTabAgbt">AGBT Rate</button>
+                        <button type="button" class="chart-tab-btn" role="tab" aria-selected="false" data-chart="csat" data-i18n="chartTabCsat">CSAT Score</button>
+                        <button type="button" class="chart-tab-btn" role="tab" aria-selected="false" data-chart="long" data-i18n="chartTabLong">Sessions 20m+</button>
+                    </div>
+                </div>
+
+                <!-- Chart Date Toolbar & Mode Toggle -->
+                <div class="chart-toolbar-row">
+                    <div class="chart-date-filter-group">
+                        <span style="font-size:12px; font-weight:600; color:var(--muted);" data-i18n="chartRangeLabel">📅 Range:</span>
+                        <select id="chartDateRangePreset" class="chart-select">
+                            <option value="recent" selected data-i18n="chartRangeRecent">Recent Available Days (Default)</option>
+                            <option value="week" data-i18n="chartRangeWeek">This Week</option>
+                            <option value="month" data-i18n="chartRangeMonth">This Month</option>
+                            <option value="custom" data-i18n="chartRangeCustom">Custom from Calendar 📆</option>
+                        </select>
+                        <div id="chartCustomCalendarWrap" class="chart-custom-range" style="display:none;">
+                            <label style="font-size:11px; color:var(--muted);" data-i18n="chartFrom">From:</label>
+                            <input type="date" id="chartStartDate">
+                            <label style="font-size:11px; color:var(--muted);" data-i18n="chartTo">To:</label>
+                            <input type="date" id="chartEndDate">
+                            <button type="button" id="btnApplyChartCustomDates" class="button btn-sm" data-i18n="chartApply">Apply</button>
+                        </div>
+                    </div>
+                    <div class="chart-toolbar-actions" style="display:flex; align-items:center; gap:10px;">
+                        <div class="chart-mode-toggle" role="group" aria-label="Chart Display Mode">
+                            <button type="button" class="chart-mode-btn active" id="btnChartModeBar" data-chart-mode="bar" title="Bar Chart">
+                                <span>📊</span> <span data-i18n="chartModeBar">Bars</span>
+                            </button>
+                            <button type="button" class="chart-mode-btn" id="btnChartModeLine" data-chart-mode="line" title="Line Chart">
+                                <span>📈</span> <span data-i18n="chartModeLine">Line</span>
+                            </button>
+                        </div>
+                        <div id="chartActiveDaysCountBadge" class="badge subtle">...</div>
+                    </div>
+                </div>
+
+                <div class="chart-container-wrap" id="analyticsChartWrap">
+                    <!-- SVG rendered dynamically in Scripts.html -->
+                </div>
+
+                <div class="chart-summary-badges">
+                    <div class="summary-badge-item">
+                        <span class="badge-dot orange" id="chartBadgeDot" aria-hidden="true"></span>
+                        <span id="chartLegendText" data-i18n="chartLegendSessions">Daily Sessions (Completed Tickets)</span>
+                    </div>
+                    <div class="summary-badge-item">
+                        <span class="badge-dot amber" aria-hidden="true"></span>
+                        <span><span data-i18n="chartBenchmark">Average: </span><strong id="chartBenchmarkVal" style="direction:ltr;display:inline-block;">0</strong></span>
+                    </div>
+                    <div class="summary-badge-item note-item">
+                        <span data-i18n="chartFooterNote">* Days are calculated dynamically from Google Sheets records</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Deep-Dive Split Grid: Agent Comparison Cards -->
+            <div class="analytics-split-grid" style="margin-top: 24px;">
+                <!-- CSAT Deep Dive -->
+                <div class="analytics-card csat-card-section">
+                    <div class="card-head">
+                        <h4><span>🎯</span> <span data-i18n="csatDistributionTitle">Customer Satisfaction Distribution (CSAT)</span></h4>
+                    </div>
+                    <div class="csat-breakdown-body" id="csatBreakdownBody">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Agent Comparisons List -->
+                <div class="analytics-card comparisons-card-section">
+                    <div class="card-head">
+                        <h4><span>👥</span> <span data-i18n="agentRankingsTitle">Agent Performance Rankings</span></h4>
+                    </div>
+                    <div class="agents-compare-list" id="agentsCompareList">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <p class="footnote" data-i18n="footerNotice">Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.</p>
+</main>
+
+<!-- تضمين كود الجافاسكربت الخاص بالواجهة في Google Apps Script -->
+<?!= include('Scripts'); ?>
+
+</body>
+</html>
