@@ -183,84 +183,94 @@ function getOverviewData() {
       });
     });
 
-    // قراءة عدد صفوف الـ Drills التفصيلية
+    // قراءة عدد صفوف الـ Drills التفصيلية وحساب الاتجاهات اليومية من السجلات الحقيقية (Header + Rows JSON)
     let totalDrillRows = 0;
     const drillSheet = ss.getSheetByName(CONFIG.SHEET_DRILLS);
-    if (drillSheet && drillSheet.getLastRow() > 1) {
-      const headerRow = drillSheet.getRange(1, 1, 1, Math.min(drillSheet.getLastColumn(), 10)).getValues()[0];
-      let countCol = 5;
-      for (let c = 0; c < headerRow.length; c++) {
-        if (String(headerRow[c]).includes("عدد")) { countCol = c + 1; break; }
-      }
-      const drillCounts = drillSheet.getRange(2, countCol, drillSheet.getLastRow() - 1, 1).getValues();
-      drillCounts.forEach(c => {
-        totalDrillRows += parseInt(c[0]) || 0;
-      });
-    }
-
-    // تجميع الأيام التاريخية المسجلة للمخطط البياني (مع استبعاد الأيام الفارغة التي ليس بها داتا نهائياً)
     const dailyAggregates = {};
-    const archiveSheet = ss.getSheetByName(CONFIG.SHEET_ARCHIVE);
-    if (archiveSheet && archiveSheet.getLastRow() > 1) {
-      const archRows = archiveSheet.getRange(2, 1, archiveSheet.getLastRow() - 1, 10).getValues();
-      archRows.forEach(r => {
+    if (drillSheet && drillSheet.getLastRow() > 1) {
+      const drillRows = drillSheet.getRange(2, 1, drillSheet.getLastRow() - 1, 7).getValues();
+      for (const r of drillRows) {
         let d = r[0];
         if (d instanceof Date) d = Utilities.formatDate(d, 'Asia/Riyadh', 'yyyy-MM-dd');
         d = String(d || '').trim();
-        if (!d) return;
+        if (!d) continue;
+
+        const metric = String(r[2] || '').trim().toLowerCase();
+        let header = [];
+        let rows = [];
+        try { header = JSON.parse(r[4] || '[]'); } catch (e) { header = []; }
+        try { rows = JSON.parse(r[5] || '[]'); } catch (e) { rows = []; }
+
+        if (Array.isArray(rows)) totalDrillRows += rows.length;
+        if (!Array.isArray(rows) || rows.length === 0) continue;
 
         if (!dailyAggregates[d]) {
-          dailyAggregates[d] = { day: d, sessions: 0, totalAbstSecs: 0, abstCount: 0, totalAgbtSecs: 0, agbtCount: 0, totalCsat: 0, csatCount: 0 };
+          dailyAggregates[d] = { day: d, sessions: 0, abstSecsSum: 0, abstCount: 0, agbtSecsSum: 0, agbtCount: 0, csatGood: 0, csatBad: 0, long: 0 };
         }
+        const agg = dailyAggregates[d];
 
-        const csat = parseFloat(r[3]) || 0;
-        if (csat > 0) {
-          dailyAggregates[d].totalCsat += csat;
-          dailyAggregates[d].csatCount++;
+        if (metric === 'abst') {
+          const timeIdx = findColIndex(header, 'basket_session_time_min', 'session_time', 'abst');
+          const over20Idx = findColIndex(header, '> 20', '20');
+          for (const row of rows) {
+            agg.sessions++;
+            if (over20Idx !== -1) {
+              const ov = String(row[over20Idx] || '').trim().toLowerCase();
+              if (ov === 'high' || ov === 'yes' || ov === '1' || ov === 'true') agg.long++;
+            }
+            if (timeIdx !== -1) {
+              const mins = parseFloat(row[timeIdx]);
+              if (!isNaN(mins) && mins > 0) {
+                agg.abstSecsSum += mins * 60;
+                agg.abstCount++;
+                if (mins >= 20 && over20Idx === -1) agg.long++;
+              }
+            }
+          }
+        } else if (metric === 'agbt') {
+          const sessionIdx = findColIndex(header, 'sessions count', 'sessions');
+          const ticketIdx = findColIndex(header, 'tickets');
+          const basketIdx = findColIndex(header, 'sum_basket_time_for_ticket_per_hour_min_online_womt', 'basket_time', 'agbt');
+          for (const row of rows) {
+            let s = 1;
+            if (sessionIdx !== -1) { const v = parseInt(row[sessionIdx], 10); if (!isNaN(v) && v > 0) s = v; }
+            else if (ticketIdx !== -1) { const v = parseInt(row[ticketIdx], 10); if (!isNaN(v) && v > 0) s = v; }
+            agg.sessions += Math.max(1, s);
+            if (basketIdx !== -1) {
+              const mins = parseFloat(row[basketIdx]);
+              if (!isNaN(mins) && mins > 0) {
+                agg.agbtSecsSum += mins * 60;
+                agg.agbtCount++;
+              }
+            }
+          }
+        } else if (metric === 'csat') {
+          const scoreIdx = findColIndex(header, 'csat_adjusted', 'csat', 'score');
+          for (const row of rows) {
+            agg.sessions++;
+            if (scoreIdx !== -1) {
+              const sc = String(row[scoreIdx] || '').trim().toLowerCase();
+              if (sc === 'good' || sc === '5' || sc === '4' || sc === 'positive') agg.csatGood++;
+              else if (sc === 'bad' || sc === '1' || sc === '2' || sc === 'negative') agg.csatBad++;
+            }
+          }
         }
-
-        const agbtStr = String(r[4] || '').trim();
-        let agbtSecs = 0;
-        if (agbtStr.includes(':')) {
-          const parts = agbtStr.split(':');
-          agbtSecs = (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
-        } else {
-          agbtSecs = (parseFloat(agbtStr) || 0) * 60;
-        }
-        if (agbtSecs > 0) {
-          dailyAggregates[d].totalAgbtSecs += agbtSecs;
-          dailyAggregates[d].agbtCount++;
-        }
-
-        const abstStr = String(r[5] || '').trim();
-        let secs = 0;
-        if (abstStr.includes(':')) {
-          const parts = abstStr.split(':');
-          secs = (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
-        } else {
-          secs = (parseFloat(abstStr) || 0) * 60;
-        }
-        if (secs > 0) {
-          dailyAggregates[d].totalAbstSecs += secs;
-          dailyAggregates[d].abstCount++;
-        }
-
-        dailyAggregates[d].sessions += 25; // نشاط يومي مقدّر لكل وكيل
-      });
+      }
     }
 
-    // تحويل الأيام إلى مصفوفة مع الاستبعاد الصارم لأي يوم بدون جلسات أو داتا
+    // تحويل الأيام إلى مصفوفة نظيفة مع استبعاد الأيام بدون جلسات فعلية
     const historicalDays = Object.keys(dailyAggregates).map(k => {
       const item = dailyAggregates[k];
+      const csatEval = (item.csatGood || 0) + (item.csatBad || 0);
       return {
         day: item.day,
         sessions: item.sessions,
-        abstSecs: item.abstCount > 0 ? Math.round(item.totalAbstSecs / item.abstCount) : 0,
-        agbtSecs: item.agbtCount > 0 ? Math.round(item.totalAgbtSecs / item.agbtCount) : 0,
-        csat: item.csatCount > 0 ? Math.round(item.totalCsat / item.csatCount) : 0,
-        long: Math.max(1, Math.round(item.sessions * 0.04))
+        abstSecs: item.abstCount > 0 ? Math.round(item.abstSecsSum / item.abstCount) : 0,
+        agbtSecs: item.agbtCount > 0 ? Math.round(item.agbtSecsSum / item.agbtCount) : 0,
+        csat: csatEval > 0 ? Math.round(((item.csatGood || 0) / csatEval) * 100) : 0,
+        long: item.long || 0
       };
-    }).filter(d => d.sessions > 0 && (d.abstSecs > 0 || d.agbtSecs > 0 || d.csat > 0))
+    }).filter(d => d.sessions > 0)
       .sort((a, b) => a.day.localeCompare(b.day));
 
     const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : "0";
@@ -324,7 +334,7 @@ function getAgentDetailData(email, metric) {
     }
 
     const lastRow = drillSheet.getLastRow();
-    const data = drillSheet.getRange(2, 1, lastRow - 1, 8).getValues();
+    const data = drillSheet.getRange(2, 1, lastRow - 1, 7).getValues();
 
     const targetEmail = email.trim().toLowerCase();
     const targetMetric = (metric || "csat").trim().toLowerCase();
@@ -341,7 +351,7 @@ function getAgentDetailData(email, metric) {
         try { header = JSON.parse(data[i][4] || "[]"); } catch (e) { header = []; }
         try { rows = JSON.parse(data[i][5] || "[]"); } catch (e) { rows = []; }
 
-        const recCount = parseInt(data[i][4]) || parseInt(data[i][6]) || rows.length || 0;
+        const recCount = Array.isArray(rows) ? rows.length : 0;
 
         return {
           success: true,
@@ -354,7 +364,7 @@ function getAgentDetailData(email, metric) {
           rows: rows,
           count: recCount,
           date: String(data[i][0] || ""),
-          savedAt: String(data[i][6] || data[i][7] || "")
+          savedAt: String(data[i][6] || "")
         };
       }
     }
@@ -608,7 +618,7 @@ function saveExtensionResultsToSheet(results, dateStr, shouldUpdateSummary) {
     drillSheet.setRightToLeft(true);
     drillSheet.appendRow([
       "التاريخ", "البريد الإلكتروني", "المقياس", "العنوان", 
-      "عدد التذاكر / السجلات", "النتيجة / القيمة", "وقت الحفظ"
+      "ترويسة الأعمدة (JSON)", "الصفوف (JSON)", "وقت الحفظ"
     ]);
     drillSheet.getRange("A1:G1").setFontWeight("bold").setBackground("#0f172a").setFontColor("#38bdf8");
     drillSheet.setFrozenRows(1);
@@ -640,37 +650,16 @@ function saveExtensionResultsToSheet(results, dateStr, shouldUpdateSummary) {
     const rows = res.rows || [];
     if (!agent || !metric) return;
 
-    // احتساب قيمة واضحة للمقياس بدون وضع أي كود JSON في الخلية
-    let metricVal = `${rows.length} تذكرة`;
-    if (metric === "csat") {
-      let good = 0, total = 0;
-      rows.forEach(r => {
-        const rating = String(r[1] || r[3] || "");
-        if (rating) {
-          total++;
-          if (rating.includes("5") || rating.includes("4") || rating.toLowerCase().includes("good")) good++;
-        }
-      });
-      metricVal = total > 0 ? ((good / total) * 100).toFixed(1) + "%" : "0%";
-    } else if (metric === "lateness") {
-      let totalLate = 0;
-      rows.forEach(r => {
-        const m = parseFloat(r[3] || r[4] || r[2] || 0) || 0;
-        totalLate += m;
-      });
-      metricVal = totalLate.toFixed(1) + " د";
-    } else if (metric === "breakBreach") {
-      metricVal = rows.length + " تجاوز";
-    }
+    // تطبيع السجل التفصيلي (Header ثابت + Rows مصفوفة) ثم تخزينه كاملاً ليظل قابلاً للقراءة والعرض لاحقاً
+    const normalized = normalizeDrillRecord(res.header || [], rows);
 
-    // كتابة بيانات نظيفة كأعمدة واضحة بدون تكديس مصفوفات JSON داخل الخلايا
     const rowValues = [
       dateStr,
       agent,
       metric.toUpperCase(),
       String(res.title || `${metric.toUpperCase()} - ${agent}`).substring(0, 200),
-      rows.length,
-      metricVal,
+      JSON.stringify(normalized.header),
+      JSON.stringify(normalized.rows),
       nowStr
     ];
 
@@ -742,6 +731,71 @@ function getTargetSpreadsheet() {
     return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   }
   return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/**
+ * ============================================================================
+ * واجهات القراءة التي تستدعيها الواجهة الأمامية (Scripts.html)
+ * ============================================================================
+ */
+function getDashboardDataFromSheet() {
+  return getOverviewData();
+}
+
+function getAgentDrillRowsFromSheet(email, metric) {
+  return getAgentDetailData(email, metric);
+}
+
+/**
+ * البحث عن فهرس عمود داخل ترويسة مقروءة من السجلات (مرن تجاه الأسماء).
+ */
+function findColIndex(headers, ...candidates) {
+  if (!Array.isArray(headers)) return -1;
+  const lower = headers.map(h => String(h).toLowerCase().trim());
+  for (const candidate of candidates) {
+    const target = candidate.toLowerCase();
+    const idx = lower.findIndex(h => h === target || h.includes(target));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function textCell(v) {
+  if (v === null || v === undefined) return '';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+/**
+ * توحيد شكل السجل التفصيلي القادم من الإضافة قبل تخزينه:
+ * - تحويل الترويسة متعددة المستويات إلى ترويسة مسطحة واحدة.
+ * - تحويل الصفوف الكائنية إلى مصفوفات بناءً على أسماء الأعمدة.
+ */
+function normalizeDrillRecord(header, rows) {
+  const flatHeader = (function () {
+    if (!Array.isArray(header)) return [];
+    const levels = header.some(Array.isArray)
+      ? header.map(function (lvl) { return Array.isArray(lvl) ? lvl : [lvl]; })
+      : [header];
+    const width = levels.reduce(function (max, lvl) { return Math.max(max, lvl.length); }, 0);
+    return Array.from({ length: width }, function (_, col) {
+      const names = levels.map(function (lvl) { return textCell(lvl[col]); }).filter(Boolean);
+      return [...new Set(names)].join(' / ') || 'Column ' + (col + 1);
+    });
+  })();
+
+  const flatRows = (Array.isArray(rows) ? rows : []).map(function (row) {
+    if (Array.isArray(row)) return row;
+    if (row && typeof row === 'object') {
+      return flatHeader.map(function (name) {
+        if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];
+        const key = Object.keys(row).find(function (k) { return String(k).toLowerCase() === String(name).toLowerCase(); });
+        return key ? row[key] : '';
+      });
+    }
+    return [];
+  });
+
+  return { header: flatHeader, rows: flatRows, width: flatHeader.length };
 }
 
 /**
