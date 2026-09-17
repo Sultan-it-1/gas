@@ -514,9 +514,9 @@ function calculateAnalytics(records, agentFilter = null) {
 
   for (const rec of agbtRecords) {
     const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
-    const agbtColIdx = h.findIndex(col => col === 'agbt' || col.includes('agbt'));
-    const ticketsColIdx = h.findIndex(col => col === 'tickets' || col.includes('ticket'));
-    const basketColIdx = h.findIndex(col => col.includes('basket_time'));
+    const agbtColIdx = findColIndex(h, 'sum_basket_time_for_ticket_per_hour_min_ONLINE_WOMT', 'sum_basket_time_for_ticket_per_hour_min', 'basket_time', 'agbt', 'time');
+    const ticketsColIdx = findColIndex(h, 'tickets', 'ticket', 'sessions count', 'sessions');
+    const basketColIdx = findColIndex(h, 'basket_time_h', 'basket_time', 'basket_session_time_min');
 
     for (const row of rec.rows || []) {
       if (agbtColIdx !== -1) {
@@ -548,7 +548,7 @@ function calculateAnalytics(records, agentFilter = null) {
 
   for (const rec of idleRecords) {
     const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
-    const idleColIdx = h.findIndex(col => col.includes('idle') || col.includes('not_working'));
+    const idleColIdx = findColIndex(h, 'time_not_working_h_shift_adjusted', 'time_not_working_h', 'idle_time', 'idle', 'not_working');
 
     for (const row of rec.rows || []) {
       if (idleColIdx !== -1) {
@@ -570,16 +570,23 @@ function calculateAnalytics(records, agentFilter = null) {
     const agRecs = records.filter(r => r.agent === ag);
     const agRows = agRecs.reduce((sum, r) => sum + (r.rows ? r.rows.length : 0), 0);
 
+    const hasCsat = agRecs.some(r => r.metric === 'csat');
+    const hasAgbt = agRecs.some(r => r.metric === 'agbt');
+    const hasAbst = agRecs.some(r => r.metric === 'abst');
+    const hasBreak = agRecs.some(r => r.metric === 'breakBreach');
+    const hasLateness = agRecs.some(r => r.metric === 'lateness');
+    const hasIdle = agRecs.some(r => r.metric === 'idle');
+
     // CSAT
     let agCsatGood = 0, agCsatTotal = 0, agCsatBad = 0;
     for (const r of agRecs.filter(r => r.metric === 'csat')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
-      const cIdx = h.findIndex(c => c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
+      const cIdx = findColIndex(h, 'csat_adjusted', 'csat', 'score', 'rating');
       for (const row of r.rows || []) {
         agCsatTotal++;
         const v = cIdx !== -1 ? String(row[cIdx] || '').toLowerCase().trim() : '';
-        if (v === 'good' || v === '5' || v === '4' || v === 'positive') agCsatGood++;
-        else if (v === 'bad' || v === '1' || v === '2' || v === 'negative') agCsatBad++;
+        if (v === 'good' || v === '5' || v === '4' || v === 'positive' || v.includes('ممتاز') || v.includes('جيد')) agCsatGood++;
+        else if (v === 'bad' || v === '1' || v === '2' || v === 'negative' || v.includes('سيء')) agCsatBad++;
       }
     }
 
@@ -587,7 +594,7 @@ function calculateAnalytics(records, agentFilter = null) {
     let agAgbtSum = 0, agAgbtCount = 0;
     for (const r of agRecs.filter(r => r.metric === 'agbt')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
-      const aIdx = h.findIndex(c => c === 'agbt' || c.includes('agbt'));
+      const aIdx = findColIndex(h, 'sum_basket_time_for_ticket_per_hour_min_ONLINE_WOMT', 'sum_basket_time_for_ticket_per_hour_min', 'basket_time', 'agbt', 'time');
       for (const row of r.rows || []) {
         if (aIdx !== -1) {
           const val = parseFloat(row[aIdx]);
@@ -603,7 +610,7 @@ function calculateAnalytics(records, agentFilter = null) {
     let agAbstSum = 0, agAbstCount = 0;
     for (const r of agRecs.filter(r => r.metric === 'abst')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
-      const sIdx = h.findIndex(c => c === 'basket_session_time_min' || c.includes('basket_session_time') || c === 'abst');
+      const sIdx = findColIndex(h, 'basket_session_time_min', 'session_time', 'basket_session_time', 'abst', 'time');
       for (const row of r.rows || []) {
         if (sIdx !== -1) {
           const val = parseFloat(row[sIdx]);
@@ -619,28 +626,37 @@ function calculateAnalytics(records, agentFilter = null) {
     const agLateness = extractLatenessMetrics(agRecs);
 
     // Idle
-    let agIdleSum = 0;
+    let agIdleSum = 0, agIdleCount = 0;
     for (const r of agRecs.filter(r => r.metric === 'idle')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
-      const iIdx = h.findIndex(c => c.includes('idle') || c.includes('not_working'));
+      const iIdx = findColIndex(h, 'time_not_working_h_shift_adjusted', 'time_not_working_h', 'idle_time', 'idle', 'not_working');
       for (const row of r.rows || []) {
         if (iIdx !== -1) {
           const v = parseFloat(row[iIdx]);
-          if (!isNaN(v)) agIdleSum += v;
+          if (!isNaN(v)) {
+            agIdleSum += v;
+            agIdleCount++;
+          }
         }
       }
     }
 
     const agEvaluated = agCsatGood + agCsatBad;
     const agAbstAvgMins = agAbstCount > 0 ? (agAbstSum / agAbstCount) : 0;
-    const agAbstFormatted = agAbstAvgMins > 0 ? `${Math.floor(agAbstAvgMins)}:${String(Math.round((agAbstAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+    const agAbstFormatted = agAbstAvgMins > 0 ? `${Math.floor(agAbstAvgMins)}:${String(Math.round((agAbstAvgMins % 1) * 60)).padStart(2, '0')}` : null;
     const agAgbtAvgMins = agAgbtCount > 0 ? (agAgbtSum / agAgbtCount) : 0;
-    const agAgbtFormatted = agAgbtAvgMins > 0 ? `${Math.floor(agAgbtAvgMins)}:${String(Math.round((agAgbtAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+    const agAgbtFormatted = agAgbtAvgMins > 0 ? `${Math.floor(agAgbtAvgMins)}:${String(Math.round((agAgbtAvgMins % 1) * 60)).padStart(2, '0')}` : null;
 
     agentStats[ag] = {
       agent: ag,
       recordsCount: agRecs.length,
       rowsCount: agRows,
+      hasCsat,
+      hasAgbt,
+      hasAbst,
+      hasBreak,
+      hasLateness,
+      hasIdle,
       csatPct: agEvaluated > 0 ? Math.round((agCsatGood / agEvaluated) * 100 * 10) / 10 : (agCsatTotal > 0 && agCsatGood > 0 ? 100 : null),
       csatTotal: agCsatTotal,
       csatGood: agCsatGood,
@@ -652,7 +668,7 @@ function calculateAnalytics(records, agentFilter = null) {
       breakExceedMins: agBreak.exceedMins,
       latenessIncidents: agLateness.incidents,
       latenessMins: agLateness.totalMins,
-      idleHours: Math.round(agIdleSum * 100) / 100
+      idleHours: agIdleCount > 0 ? Math.round(agIdleSum * 100) / 100 : null
     };
   }
 
@@ -1057,41 +1073,171 @@ function savePayloadToMicroPartitionedDrive(payload) {
   // 5. تشغيل المحرك الرياضي الشامل المعتمد لحساب كافة مؤشرات الفريق والوكلاء
   const analytics = calculateAnalytics(allUpdatedRecords);
 
-  // دمج الأسماء الصريحة إذا وُجدت في payload.agents
-  const incomingAgentsMeta = payload.agents || payload.summaryAgents || [];
+  // قراءة الملخص السابق إن وجد للاحتفاظ ببيانات الوكلاء والمقاييس السابقة وعدم تصفيرها
+  let existingOverview = null;
+  const summaryFiles = parentFolder.getFilesByName(CONFIG.SUMMARY_FILE_NAME);
+  let targetSummaryFile = null;
+  if (summaryFiles.hasNext()) {
+    targetSummaryFile = summaryFiles.next();
+    try {
+      const exContent = targetSummaryFile.getBlob().getDataAsString();
+      if (exContent && exContent.trim()) {
+        existingOverview = JSON.parse(exContent);
+      }
+    } catch (e) {
+      console.warn("Failed reading existing summary_overview.json:", e);
+    }
+  }
+
+  // دمج الأسماء الصريحة والمقاييس الأساسية الواردة في payload.agents مع الملخص السابق
   const metaMap = {};
+  if (existingOverview && Array.isArray(existingOverview.agents)) {
+    existingOverview.agents.forEach(a => {
+      const em = String(a.email || '').trim().toLowerCase();
+      if (em) metaMap[em] = a;
+    });
+  }
+
+  const incomingAgentsMeta = payload.agents || payload.summaryAgents || [];
   incomingAgentsMeta.forEach(a => {
     const em = String(a.email || '').trim().toLowerCase();
-    if (em) metaMap[em] = a;
+    if (em) metaMap[em] = Object.assign({}, metaMap[em] || {}, a);
   });
 
-  // بناء مصفوفة الوكلاء النهائية للشاشة الرئيسية
-  const finalAgentsList = analytics.uniqueAgents.map(agEmail => {
-    const agStat = analytics.agentStats[agEmail] || {};
-    const emLower = agEmail.toLowerCase();
+  // جمع كافة إيميلات الوكلاء (سواء لديهم ملفات تفصيلية أو مسجلين في بطاقات الملخص)
+  const allAgentEmailsSet = new Set([
+    ...analytics.uniqueAgents.map(e => e.toLowerCase()),
+    ...Object.keys(metaMap)
+  ]);
+
+  // بناء مصفوفة الوكلاء النهائية للشاشة الرئيسية مع الحفاظ التام على المقاييس
+  const finalAgentsList = Array.from(allAgentEmailsSet).map(emLower => {
+    const origEmail = analytics.uniqueAgents.find(e => e.toLowerCase() === emLower) || (metaMap[emLower] && metaMap[emLower].email) || emLower;
+    const agStat = analytics.agentStats[origEmail] || analytics.agentStats[emLower] || {};
     const meta = metaMap[emLower] || {};
 
     let displayName = meta.name || '';
     if (!displayName) {
-      displayName = agEmail.split('@')[0].replace(/\./g, ' ');
+      displayName = origEmail.split('@')[0].replace(/\./g, ' ');
     }
+
+    // CSAT: الأولوية لملف التفصيل إذا وُجد، وإلا استخدام قيمة الملخص
+    let csatVal = 0;
+    if (agStat.hasCsat && agStat.csatPct !== null) {
+      csatVal = agStat.csatPct;
+    } else if (meta.csat !== undefined && meta.csat !== null && meta.csat !== '') {
+      csatVal = parseFloat(String(meta.csat).replace(/%/g, '')) || 0;
+    }
+
+    // AGBT: الأولوية للملف التفصيلي الفعلي، وإلا الحفاظ التام على بطاقة الملخص
+    let agbtVal = "00:00";
+    if (agStat.hasAgbt && agStat.agbtDisplay) {
+      agbtVal = agStat.agbtDisplay;
+    } else if (meta.agbt) {
+      agbtVal = String(meta.agbt).trim();
+    }
+
+    // ABST: الأولوية للملف التفصيلي الفعلي، وإلا الحفاظ التام على بطاقة الملخص
+    let abstVal = "00:00";
+    if (agStat.hasAbst && agStat.abstAvg) {
+      abstVal = agStat.abstAvg;
+    } else if (meta.abst) {
+      abstVal = String(meta.abst).trim();
+    }
+
+    // Break Breach: الأولوية لتفاصيل البريك، وإلا استخدام قيمة الملخص
+    let breakVal = "0";
+    if (agStat.hasBreak && agStat.breakBreaches !== undefined) {
+      breakVal = String(agStat.breakBreaches);
+    } else if (meta.breakBreach !== undefined && meta.breakBreach !== null) {
+      breakVal = String(meta.breakBreach);
+    }
+
+    // Lateness: الأولوية لتفاصيل التأخير، وإلا استخدام قيمة الملخص
+    let latenessVal = 0;
+    if (agStat.hasLateness && agStat.latenessMins !== undefined) {
+      latenessVal = agStat.latenessMins;
+    } else if (meta.lateness !== undefined && meta.lateness !== null) {
+      latenessVal = parseFloat(meta.lateness) || 0;
+    }
+
+    // Idle: الأولوية للملف التفصيلي، وإلا استخدام قيمة الملخص
+    let idleVal = "0";
+    if (agStat.hasIdle && agStat.idleHours !== null && agStat.idleHours !== undefined) {
+      idleVal = String(agStat.idleHours);
+    } else if (meta.idle !== undefined && meta.idle !== null) {
+      idleVal = String(meta.idle);
+    }
+
+    // الإنتاجية Productivity
+    const prodVal = String(meta.productivity || "0%");
 
     return {
       date: dateStr,
       name: displayName,
-      email: agEmail,
-      csat: agStat.csatPct !== null ? agStat.csatPct : (parseFloat(meta.csat) || 0),
-      agbt: agStat.agbtDisplay || meta.agbt || "00:00",
-      abst: agStat.abstAvg || meta.abst || "00:00",
-      breakBreach: String(agStat.breakBreaches !== undefined ? agStat.breakBreaches : (meta.breakBreach || "0")),
-      lateness: agStat.latenessMins !== undefined ? agStat.latenessMins : (parseFloat(meta.lateness) || 0),
-      idle: String(agStat.idleHours !== undefined ? agStat.idleHours : (meta.idle || "0")),
-      productivity: String(meta.productivity || "0%"),
+      email: origEmail,
+      csat: csatVal,
+      agbt: agbtVal,
+      abst: abstVal,
+      breakBreach: breakVal,
+      lateness: latenessVal,
+      idle: idleVal,
+      productivity: prodVal,
       recordsCount: agStat.recordsCount || 0,
       rowsCount: agStat.rowsCount || 0,
       updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
     };
   });
+
+  // حساب إجماليات ومتوسطات الفريق الفعلية عبر كافة الوكلاء
+  let sumCsat = 0, countCsat = 0;
+  let sumLateness = 0;
+  let sumBreaches = 0;
+
+  finalAgentsList.forEach(a => {
+    if (a.csat > 0) {
+      sumCsat += a.csat;
+      countCsat++;
+    }
+    sumLateness += (parseFloat(a.lateness) || 0);
+    sumBreaches += (parseInt(a.breakBreach, 10) || 0);
+  });
+
+  const teamAvgCsat = analytics.csat.pct !== null 
+    ? `${analytics.csat.pct}%` 
+    : (countCsat > 0 ? `${Math.round((sumCsat / countCsat) * 10) / 10}%` : "—");
+
+  const teamTotalLateness = analytics.lateness.totalMins > 0 
+    ? `${analytics.lateness.totalMins}` 
+    : `${Math.round(sumLateness)}`;
+
+  const teamTotalBreaches = analytics.breakBreach.breaches > 0 
+    ? `${analytics.breakBreach.breaches}` 
+    : `${sumBreaches}`;
+
+  // دمج الأيام التاريخية مع الحفاظ على الأيام السابقة
+  const timelineMap = new Map();
+  if (existingOverview && Array.isArray(existingOverview.historicalDays)) {
+    existingOverview.historicalDays.forEach(d => {
+      if (d && d.day) timelineMap.set(d.day, d);
+    });
+  }
+  analytics.timeline.forEach(t => {
+    timelineMap.set(t.day, {
+      day: t.day,
+      displayDay: t.displayDay,
+      sessions: t.sessions,
+      abstMins: t.abstMins || (t.abstSecs ? Math.round(t.abstSecs / 60 * 10) / 10 : 0),
+      abstSecs: t.abstSecs || 0,
+      agbtMins: t.agbtSecs ? Math.round(t.agbtSecs / 60 * 10) / 10 : 0,
+      agbtSecs: t.agbtSecs || 0,
+      csat: t.csat || 0,
+      csatGood: t.csatGood || 0,
+      csatTotal: t.csatTotal || 0,
+      long: t.long || 0
+    });
+  });
+  const mergedHistoricalDays = Array.from(timelineMap.values()).sort((a, b) => a.day.localeCompare(b.day));
 
   // بناء ملف الملخص العام summary_overview.json
   const overviewData = {
@@ -1099,34 +1245,25 @@ function savePayloadToMicroPartitionedDrive(payload) {
     lastUpdated: nowStr,
     summary: {
       totalAgents: finalAgentsList.length,
-      avgCsat: analytics.csat.pct !== null ? `${analytics.csat.pct}%` : "—",
-      totalLateness: `${analytics.lateness.totalMins}`,
-      totalBreaches: `${analytics.breakBreach.breaches}`,
+      avgCsat: teamAvgCsat,
+      totalLateness: teamTotalLateness,
+      totalBreaches: teamTotalBreaches,
       totalSessions: analytics.totalSessions,
       totalLongSessions: analytics.totalLongSessions,
       avgDailySessions: analytics.avgDailySessions,
-      activeDays: analytics.activeDays,
+      activeDays: mergedHistoricalDays.length || analytics.activeDays,
       totalDrillRows: analytics.totalRows,
       lastSync: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm'),
       totalMetrics: 7
     },
     agents: finalAgentsList,
-    historicalDays: analytics.timeline.map(t => ({
-      day: t.day,
-      displayDay: t.displayDay,
-      sessions: t.sessions,
-      abstSecs: t.abstSecs || 0,
-      agbtSecs: t.agbtSecs || 0,
-      csat: t.csat || 0,
-      long: t.long || 0
-    }))
+    historicalDays: mergedHistoricalDays
   };
 
   // حفظ ملف summary_overview.json الصغير وتحديث كاش الذاكرة
   const summaryJsonStr = JSON.stringify(overviewData);
-  const summaryFiles = parentFolder.getFilesByName(CONFIG.SUMMARY_FILE_NAME);
-  if (summaryFiles.hasNext()) {
-    summaryFiles.next().setContent(summaryJsonStr);
+  if (targetSummaryFile) {
+    targetSummaryFile.setContent(summaryJsonStr);
   } else {
     parentFolder.createFile(CONFIG.SUMMARY_FILE_NAME, summaryJsonStr, MimeType.PLAIN_TEXT);
   }

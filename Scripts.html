@@ -489,8 +489,8 @@
         drillSortCol: null,
         drillSortAsc: true,
         currentMainTab: 'data',
-        currentChartTab: 'sessions',
-        chartDisplayMode: 'bar', // 'bar' (default) or 'line'
+        currentChartTab: 'csat',
+        chartDisplayMode: 'line', // 'line' (default for curves) or 'bar'
         detailFilters: {
             datePreset: 'all',
             csatScore: 'all',
@@ -1950,56 +1950,99 @@
     function renderAnalyticsView() {
         if (!AppState.agents || AppState.agents.length === 0) return;
 
-        let totalCsat = 0, countCsat = 0, highCsatCount = 0;
-        let totalLate = 0;
-        let totalBreaches = 0;
+        const selectedAgentEmail = (el('analyticsAgentSelect') ? el('analyticsAgentSelect').value : '').trim().toLowerCase();
+        let targetAgents = AppState.agents;
+        const isSingleAgent = Boolean(selectedAgentEmail && AppState.agents.some(a => (a.email || '').toLowerCase() === selectedAgentEmail));
 
-        AppState.agents.forEach(a => {
-            if (a.csat > 0) {
-                totalCsat += a.csat;
-                countCsat++;
-                if (a.csat >= 90) highCsatCount++;
-            }
-            totalLate += a.lateness || 0;
-            totalBreaches += parseInt(a.breakBreach) || 0;
-        });
+        if (isSingleAgent) {
+            targetAgents = AppState.agents.filter(a => (a.email || '').toLowerCase() === selectedAgentEmail);
+        }
 
-        const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : 0;
         const unitMin = I18N.t('unitMinutes');
         const unitTimes = I18N.t('unitTimes');
 
-        if (el('kpiCsatVal')) el('kpiCsatVal').textContent = `${avgCsat}%`;
-        if (el('kpiCsatFill')) el('kpiCsatFill').style.width = `${avgCsat}%`;
+        if (isSingleAgent) {
+            // ========================================================
+            // 1. عرض بطاقات الوكيل الفردي المختار بدقة
+            // ========================================================
+            const agent = targetAgents[0];
+            const csatVal = Number(agent.csat) || 0;
+            const csatDisplay = csatVal > 0 ? `${csatVal.toFixed(1)}%` : '—';
+            if (el('kpiCsatVal')) el('kpiCsatVal').textContent = csatDisplay;
+            if (el('kpiCsatFill')) el('kpiCsatFill').style.width = `${Math.min(100, csatVal)}%`;
 
-        if (el('kpiLatenessVal')) el('kpiLatenessVal').textContent = `${totalLate.toFixed(1)} ${unitMin}`;
-        if (el('kpiLatenessFill')) el('kpiLatenessFill').style.width = `${Math.min(100, (totalLate / (AppState.agents.length * 10)) * 100)}%`;
+            const lateVal = parseFloat(agent.lateness) || 0;
+            if (el('kpiLatenessVal')) el('kpiLatenessVal').textContent = `${lateVal} ${unitMin}`;
+            if (el('kpiLatenessFill')) el('kpiLatenessFill').style.width = `${Math.min(100, (lateVal / 30) * 100)}%`;
 
-        if (el('kpiBreachVal')) el('kpiBreachVal').textContent = `${totalBreaches} ${unitTimes}`;
-        if (el('kpiBreachFill')) el('kpiBreachFill').style.width = `${Math.min(100, (totalBreaches / (AppState.agents.length * 3)) * 100)}%`;
+            const breachVal = parseInt(agent.breakBreach, 10) || 0;
+            if (el('kpiBreachVal')) el('kpiBreachVal').textContent = `${breachVal} ${unitTimes}`;
+            if (el('kpiBreachFill')) el('kpiBreachFill').style.width = `${Math.min(100, breachVal * 25)}%`;
 
-        // AGBT الفعلي: متوسط كل الوكلاء (وليس قيمة أول وكيل فقط)
-        let agbtSecsSum = 0, agbtCount = 0;
-        AppState.agents.forEach(a => {
-            const secs = parseTimeToSeconds(a.agbt);
-            if (secs !== 999999) { agbtSecsSum += secs; agbtCount++; }
-        });
-        const agbtAvgSecs = agbtCount > 0 ? Math.round(agbtSecsSum / agbtCount) : 0;
-        if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = formatSeconds(agbtAvgSecs);
-        if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtAvgSecs / 600) * 100)}%`;
+            const agbtStr = agent.agbt || "00:00";
+            if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = agbtStr;
+            const agbtSecs = parseTimeToSeconds(agbtStr);
+            if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtSecs / 600) * 100)}%`;
 
-        // Idle الفعلي: متوسط كل الوكلاء (وليس قيمة أول وكيل فقط)
-        let idleMinsSum = 0, idleCount = 0;
-        AppState.agents.forEach(a => {
-            const mins = parseMinutesFromString(a.idle);
-            idleMinsSum += mins;
-            idleCount++;
-        });
-        const idleAvgMins = idleCount > 0 ? Math.round(idleMinsSum / idleCount) : 0;
-        if (el('kpiIdleVal')) el('kpiIdleVal').textContent = `${idleAvgMins}m`;
-        if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleAvgMins / 120) * 100)}%`;
+            const idleStr = agent.idle || "0";
+            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = `${idleStr}`;
+            const idleMins = parseMinutesFromString(idleStr);
+            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleMins / 120) * 100)}%`;
+        } else {
+            // ========================================================
+            // 2. عرض إجماليات ومتوسطات الفريق بالكامل
+            // ========================================================
+            let totalCsat = 0, countCsat = 0, highCsatCount = 0;
+            let totalLate = 0;
+            let totalBreaches = 0;
 
-        // 2. الشريط الثانوي (Secondary Quick Stats Strip) — من البيانات الحقيقية في الشيت
-        const histDays = Array.isArray(AppState.historicalDays) ? AppState.historicalDays.filter(d => Number(d.sessions) > 0) : [];
+            AppState.agents.forEach(a => {
+                const cVal = Number(a.csat) || 0;
+                if (cVal > 0) {
+                    totalCsat += cVal;
+                    countCsat++;
+                    if (cVal >= 90) highCsatCount++;
+                }
+                totalLate += (parseFloat(a.lateness) || 0);
+                totalBreaches += (parseInt(a.breakBreach, 10) || 0);
+            });
+
+            const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : 0;
+            if (el('kpiCsatVal')) el('kpiCsatVal').textContent = countCsat > 0 ? `${avgCsat}%` : '—';
+            if (el('kpiCsatFill')) el('kpiCsatFill').style.width = `${avgCsat}%`;
+
+            if (el('kpiLatenessVal')) el('kpiLatenessVal').textContent = `${totalLate.toFixed(1)} ${unitMin}`;
+            if (el('kpiLatenessFill')) el('kpiLatenessFill').style.width = `${Math.min(100, (totalLate / (AppState.agents.length * 10 || 1)) * 100)}%`;
+
+            if (el('kpiBreachVal')) el('kpiBreachVal').textContent = `${totalBreaches} ${unitTimes}`;
+            if (el('kpiBreachFill')) el('kpiBreachFill').style.width = `${Math.min(100, (totalBreaches / (AppState.agents.length * 3 || 1)) * 100)}%`;
+
+            // AGBT الفعلي: متوسط كل الوكلاء
+            let agbtSecsSum = 0, agbtCount = 0;
+            AppState.agents.forEach(a => {
+                const secs = parseTimeToSeconds(a.agbt);
+                if (secs !== 999999 && secs > 0) { agbtSecsSum += secs; agbtCount++; }
+            });
+            const agbtAvgSecs = agbtCount > 0 ? Math.round(agbtSecsSum / agbtCount) : 0;
+            if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = agbtCount > 0 ? formatSeconds(agbtAvgSecs) : "00:00";
+            if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtAvgSecs / 600) * 100)}%`;
+
+            // Idle الفعلي: متوسط كل الوكلاء
+            let idleMinsSum = 0, idleCount = 0;
+            AppState.agents.forEach(a => {
+                const mins = parseMinutesFromString(a.idle);
+                if (mins > 0) {
+                    idleMinsSum += mins;
+                    idleCount++;
+                }
+            });
+            const idleAvgMins = idleCount > 0 ? Math.round(idleMinsSum / idleCount) : 0;
+            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = idleCount > 0 ? `${idleAvgMins}m` : "0m";
+            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleAvgMins / 120) * 100)}%`;
+        }
+
+        // 3. الشريط الثانوي (Secondary Quick Stats Strip)
+        const histDays = Array.isArray(AppState.historicalDays) ? AppState.historicalDays.filter(d => Number(d.sessions) > 0 || Number(d.csat) > 0) : [];
         const totalSessions = histDays.reduce((s, d) => s + (Number(d.sessions) || 0), 0);
         const totalLongSessions = histDays.reduce((s, d) => s + (Number(d.long) || 0), 0);
         const activeDays = histDays.length;
@@ -2010,18 +2053,26 @@
         if (el('secStatActiveDays')) el('secStatActiveDays').textContent = `${activeDays} ${I18N.t('unitDays')}`;
         if (el('secStatLongSessions')) el('secStatLongSessions').textContent = `${totalLongSessions} ${I18N.t('unitSessions')}`;
 
-        // 3. رسم المخطط البياني التفاعلي SVG للأيام والسيشنات ومعدل ABST
+        // 4. رسم المخطط البياني التفاعلي SVG
         renderSvgChart();
 
-        // 4. تصنيف CSAT
+        // 5. تصنيف CSAT
         const csatBox = el('csatBreakdownBody');
         if (csatBox) {
-            const highPct = countCsat > 0 ? Math.round((highCsatCount / countCsat) * 100) : 0;
+            let evalCount = 0, reachedTarget = 0;
+            AppState.agents.forEach(a => {
+                const c = Number(a.csat) || 0;
+                if (c > 0) {
+                    evalCount++;
+                    if (c >= 90) reachedTarget++;
+                }
+            });
+            const highPct = evalCount > 0 ? Math.round((reachedTarget / evalCount) * 100) : 0;
             csatBox.innerHTML = `
                 <div style="margin-bottom:14px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
                         <span>${I18N.t('csatDistributionSub')}</span>
-                        <strong style="color:#10b981;">${highPct}% (${highCsatCount} / ${countCsat})</strong>
+                        <strong style="color:#10b981;">${highPct}% (${reachedTarget} / ${evalCount})</strong>
                     </div>
                     <div class="kpi-bar-track"><div class="kpi-bar-fill emerald" style="width:${highPct}%;"></div></div>
                 </div>
@@ -2031,20 +2082,21 @@
             `;
         }
 
-        // 5. ترتيب أداء الوكلاء
+        // 6. ترتيب أداء الوكلاء
         const rankList = el('agentsCompareList');
         if (rankList) {
             rankList.innerHTML = '';
-            const sortedAgents = [...AppState.agents].sort((a, b) => b.csat - a.csat).slice(0, 10);
+            const sortedAgents = [...AppState.agents].sort((a, b) => (Number(b.csat) || 0) - (Number(a.csat) || 0)).slice(0, 10);
             sortedAgents.forEach((a, idx) => {
+                const isCurrentAgent = isSingleAgent && (a.email || '').toLowerCase() === selectedAgentEmail;
                 const item = document.createElement('div');
-                item.className = 'rank-item';
-                item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid var(--border-subtle);';
+                item.className = 'rank-item' + (isCurrentAgent ? ' current-active-agent' : '');
+                item.style.cssText = `display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid var(--border-subtle); ${isCurrentAgent ? 'background:rgba(56, 189, 248, 0.12); border-radius:6px;' : ''}`;
                 item.innerHTML = `
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span class="badge" style="background:var(--panel-sub); color:#fff; font-weight:700;">#${idx + 1}</span>
                         <div>
-                            <strong style="color:#fff; display:block; font-size:13px;">${a.name}</strong>
+                            <strong style="color:#fff; display:block; font-size:13px;">${a.name} ${isCurrentAgent ? '⭐' : ''}</strong>
                             <span style="color:var(--muted); font-size:11px;">${a.email}</span>
                         </div>
                     </div>
@@ -2058,26 +2110,46 @@
     }
 
     /**
-     * رسم المخطط البياني التفاعلي SVG للسيشنات ومعدل ABST عبر الأيام
+     * رسم المخطط البياني التفاعلي SVG المعتمد: منحنيات ناعمة (Smooth Curves) للمقاييس وأعمدة للسيشنات
      */
     function renderSvgChart() {
         const wrap = el('analyticsChartWrap');
         const badgeDays = el('chartActiveDaysCountBadge');
         if (!wrap) return;
 
-        const chartType = AppState.currentChartTab || 'sessions';
+        const chartType = AppState.currentChartTab || 'csat';
         const datePreset = AppState.chartDatePreset || 'recent';
-        const displayMode = AppState.chartDisplayMode || 'bar';
+        // الوضع الافتراضي: خطي للمقاييس المئوية والزمنية، وأعمدة لحجم السيشنات
+        const defaultModeForType = (chartType === 'sessions' || chartType === 'long') ? 'bar' : 'line';
+        const displayMode = AppState.chartDisplayMode || defaultModeForType;
 
         if (el('btnChartModeBar')) el('btnChartModeBar').classList.toggle('active', displayMode === 'bar');
         if (el('btnChartModeLine')) el('btnChartModeLine').classList.toggle('active', displayMode === 'line');
+
+        // مزامنة حالة الأزرار التبويبية العلوية
+        document.querySelectorAll('.chart-tab-btn').forEach(btn => {
+            const isCurrent = btn.getAttribute('data-chart') === chartType;
+            btn.classList.toggle('active', isCurrent);
+            btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+        });
 
         const allRecordedDays = (AppState.historicalDays && AppState.historicalDays.length > 0)
             ? AppState.historicalDays
             : [];
 
-        let activeDays = allRecordedDays.filter(d => Number(d.sessions) > 0 && (Number(d.abstSecs) > 0 || Number(d.agbtSecs) > 0 || Number(d.csat) > 0));
-        activeDays.sort((a, b) => a.day.localeCompare(b.day));
+        let activeDays = allRecordedDays.filter(d => {
+            if (chartType === 'csat') return Number(d.csat) > 0 || Number(d.csatTotal) > 0 || Number(d.sessions) > 0;
+            if (chartType === 'abst') return Number(d.abstSecs) > 0 || Number(d.abstMins) > 0;
+            if (chartType === 'agbt') return Number(d.agbtSecs) > 0 || Number(d.agbtMins) > 0;
+            if (chartType === 'long') return Number(d.long) > 0;
+            return Number(d.sessions) > 0;
+        });
+
+        if (activeDays.length === 0) {
+            activeDays = allRecordedDays.filter(d => Number(d.sessions) > 0 || Number(d.csat) > 0 || Number(d.abstSecs) > 0);
+        }
+
+        activeDays.sort((a, b) => (a.day || '').localeCompare(b.day || ''));
 
         if (datePreset === 'week') {
             activeDays = activeDays.slice(-7);
@@ -2086,148 +2158,175 @@
         } else if (datePreset === 'custom' && AppState.chartStartDate && AppState.chartEndDate) {
             activeDays = activeDays.filter(d => d.day >= AppState.chartStartDate && d.day <= AppState.chartEndDate);
         } else {
-            activeDays = activeDays.slice(-8);
+            activeDays = activeDays.slice(-14);
         }
 
         if (badgeDays) {
             badgeDays.textContent = I18N.t('activeDaysBadge', { count: activeDays.length });
         }
 
-        if (activeDays.length === 0) {
-            wrap.innerHTML = `<div style="text-align:center; padding:50px; color:var(--muted);">${I18N.t('noMatchingRows')}</div>`;
+        const isArabic = I18N.currentLang === 'ar';
+        let values = [];
+        let unit = '%';
+        let chartColor = '#10b981';
+        let minMaxBaseline = 100;
+        let subtitleText = '';
+        let legendText = '';
+
+        if (chartType === 'csat') {
+            values = activeDays.map(d => Number(d.csat) || 0);
+            unit = '%';
+            chartColor = '#10b981';
+            minMaxBaseline = 100;
+            subtitleText = isArabic ? 'نسبة رضا العملاء CSAT اليومية من إجمالي التقييمات المسجلة' : 'Daily Customer Satisfaction CSAT percentage';
+            legendText = isArabic ? 'معدل رضا العملاء CSAT %' : 'Customer Satisfaction CSAT %';
+        } else if (chartType === 'abst') {
+            values = activeDays.map(d => d.abstMins !== undefined && d.abstMins > 0 ? Number(d.abstMins) : Math.round((Number(d.abstSecs) || 0) / 60 * 10) / 10);
+            unit = isArabic ? 'د' : 'min';
+            chartColor = '#f97316';
+            minMaxBaseline = 5;
+            subtitleText = isArabic ? 'متوسط سرعة الرد ومعالجة التكتات (ABST) بالدقائق لكل يوم' : 'Daily Average ABST Handling Time in minutes';
+            legendText = isArabic ? 'معدل ABST بالدقائق' : 'Daily ABST Rate (min)';
+        } else if (chartType === 'agbt') {
+            values = activeDays.map(d => d.agbtMins !== undefined && d.agbtMins > 0 ? Number(d.agbtMins) : Math.round((Number(d.agbtSecs) || 0) / 60 * 10) / 10);
+            unit = isArabic ? 'د' : 'min';
+            chartColor = '#0ea5e9';
+            minMaxBaseline = 5;
+            subtitleText = isArabic ? 'متوسط وقت السلة وإنجاز التكتات (AGBT) بالدقائق لكل يوم' : 'Daily Average AGBT Basket Time in minutes';
+            legendText = isArabic ? 'معدل AGBT بالدقائق' : 'Daily AGBT Rate (min)';
+        } else if (chartType === 'sessions') {
+            values = activeDays.map(d => Number(d.sessions) || 0);
+            unit = I18N.t('unitSessions');
+            chartColor = '#38bdf8';
+            minMaxBaseline = 20;
+            subtitleText = isArabic ? 'تتبع حجم التكتات والسيشنات المنجزة يومياً' : 'Daily completed session volume';
+            legendText = isArabic ? 'السيشن اليومي (تكتات منجزة)' : 'Daily Sessions (Tickets)';
+        } else {
+            values = activeDays.map(d => Number(d.long) || 0);
+            unit = I18N.t('unitSessions');
+            chartColor = '#ef4444';
+            minMaxBaseline = 5;
+            subtitleText = isArabic ? 'الجلسات الطويلة التي تجاوزت حاجز الـ 20 دقيقة لكل يوم' : 'Sessions exceeding 20 minutes duration';
+            legendText = isArabic ? 'جلسات 20 دقيقة وفوق' : 'Sessions 20m+';
+        }
+
+        if (el('chartSubtitle')) el('chartSubtitle').textContent = subtitleText;
+        if (el('chartLegendText')) el('chartLegendText').textContent = legendText;
+        if (el('chartBadgeDot')) el('chartBadgeDot').style.background = chartColor;
+
+        const hasNonZero = values.some(v => v > 0);
+        if (activeDays.length === 0 || !hasNonZero) {
+            wrap.innerHTML = `
+                <div style="text-align:center; padding:55px 20px; color:var(--muted); font-size:13px; line-height:1.7;">
+                    <span style="font-size:26px; display:block; margin-bottom:8px;">📊</span>
+                    <b style="color:#f8fafc;">${legendText}</b><br>
+                    ${isArabic ? 'لا توجد بيانات مسجلة لهذا المقياس ضمن الأيام المستوردة — يمكنك اختيار تبويب آخر لعرض الإحصائيات المتوفرة.' : 'No recorded data for this metric in the selected date range.'}
+                </div>
+            `;
+            if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = '—';
             return;
         }
 
-        const days = activeDays.map(d => d.day.slice(5));
-        let values = [];
-        let unit = '';
-        let chartColor = '#38bdf8';
-
-        // Helper for CSAT dynamic coloring: >=90 Green, <75 Red, between Yellow
-        function getCsatColor(score) {
-            if (score >= 90) return '#10b981'; // Green (>= 90%)
-            if (score < 75) return '#ef4444';  // Red (< 75%)
-            return '#f59e0b';                  // Yellow/Amber (75% <= score < 90%)
-        }
-
-        if (chartType === 'sessions') {
-            values = activeDays.map(d => d.sessions);
-            unit = I18N.t('unitSessions');
-            chartColor = '#38bdf8';
-            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendSessions');
-            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#38bdf8';
-        } else if (chartType === 'abst') {
-            // ABST is strictly Orange
-            values = activeDays.map(d => d.abstSecs || 0);
-            unit = I18N.currentLang === 'ar' ? 'د' : 'min';
-            chartColor = '#f97316'; // Orange
-            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendAbst');
-            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#f97316';
-        } else if (chartType === 'agbt') {
-            // AGBT is strictly Blue
-            values = activeDays.map(d => d.agbtSecs || 0);
-            unit = I18N.currentLang === 'ar' ? 'د' : 'min';
-            chartColor = '#0ea5e9'; // Blue
-            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendAgbt');
-            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#0ea5e9';
-        } else if (chartType === 'csat') {
-            values = activeDays.map(d => d.csat || 0);
-            unit = '%';
-            chartColor = '#10b981';
-            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendCsat');
-            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#10b981';
-        } else {
-            values = activeDays.map(d => d.long || 0);
-            unit = I18N.t('unitSessions');
-            chartColor = '#ef4444';
-            if (el('chartLegendText')) el('chartLegendText').textContent = I18N.t('chartLegendLong');
-            if (el('chartBadgeDot')) el('chartBadgeDot').style.background = '#ef4444';
-        }
-
         const count = values.length;
-        const maxVal = Math.max(...values, 1) * 1.18;
+        const maxVal = Math.max(...values, minMaxBaseline) * (chartType === 'csat' ? 1.05 : 1.15);
         const minVal = 0;
-        const total = values.reduce((a, b) => a + b, 0);
-        const avgVal = (total / count).toFixed(1);
+        const nonZeroValues = values.filter(v => v > 0);
+        const total = nonZeroValues.reduce((a, b) => a + b, 0);
+        const avgVal = nonZeroValues.length > 0 ? (total / nonZeroValues.length) : 0;
 
-        function formatDisplayVal(val) {
-            if (chartType === 'abst' || chartType === 'agbt') {
-                const m = Math.floor(val / 60);
-                const s = Math.round(val % 60);
-                return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-            }
-            if (chartType === 'csat') return `${val}%`;
-            return `${val}`;
-        }
-
-        let benchmarkText = `${avgVal} ${unit}`;
-        if (chartType === 'abst' || chartType === 'agbt') {
-            const mins = Math.floor(avgVal / 60);
-            const secs = Math.round(avgVal % 60);
-            const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-            benchmarkText = I18N.currentLang === 'ar' ? `${formatted} د` : `${formatted} min`;
-        } else if (chartType === 'csat') {
-            benchmarkText = `${avgVal}%`;
+        let benchmarkText = `${avgVal.toFixed(1)} ${unit}`;
+        if (chartType === 'csat') {
+            benchmarkText = `${avgVal.toFixed(1)}%`;
+        } else if (chartType === 'abst' || chartType === 'agbt') {
+            const m = Math.floor(avgVal);
+            const s = Math.round((avgVal % 1) * 60);
+            benchmarkText = `${m}:${String(s).padStart(2, '0')} ${unit}`;
         }
         if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = benchmarkText;
 
-        const width = 800;
+        const width = 820;
         const height = 240;
         const padX = 55;
-        const padY = 34;
+        const padY = 32;
         const chartW = width - padX * 2;
         const chartH = height - padY * 2;
+        const days = activeDays.map(d => (d.displayDay || (d.day ? d.day.slice(5) : '')));
+
+        function getCsatColor(score) {
+            if (score >= 90) return '#10b981';
+            if (score < 75) return '#ef4444';
+            return '#f59e0b';
+        }
+
+        function formatDisplayVal(val) {
+            if (chartType === 'csat') return `${Math.round(val)}%`;
+            if (chartType === 'abst' || chartType === 'agbt') {
+                const m = Math.floor(val);
+                const s = Math.round((val % 1) * 60);
+                return `${m}:${String(s).padStart(2, '0')}`;
+            }
+            return `${val}`;
+        }
+
+        const getX = i => padX + (count === 1 ? chartW / 2 : (i / (count - 1)) * chartW);
+        const getY = val => height - padY - ((val - minVal) / (maxVal - minVal || 1)) * chartH;
+
+        // خطوط الشبكة الأفقية (4 مستويات)
+        let gridLines = '';
+        const steps = 4;
+        for (let s = 0; s <= steps; s++) {
+            const v = minVal + (maxVal - minVal) * (s / steps);
+            const y = getY(v);
+            let labelText = '';
+            if (chartType === 'csat') labelText = `${Math.round(v)}%`;
+            else if (chartType === 'abst' || chartType === 'agbt') labelText = `${v.toFixed(1)} ${unit}`;
+            else labelText = `${Math.round(v)}`;
+
+            gridLines += `
+                <line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" stroke="rgba(148, 163, 184, 0.12)" stroke-dasharray="3 4" stroke-width="1" />
+                <text x="${padX - 8}" y="${y + 4}" fill="#94a3b8" font-size="10" font-family="'JetBrains Mono', monospace" text-anchor="end">${labelText}</text>
+            `;
+        }
+
+        // خط المتوسط المرجعي (Benchmark line)
+        const avgY = getY(avgVal);
+        const avgLine = `
+            <line x1="${padX}" y1="${avgY}" x2="${width - padX}" y2="${avgY}" stroke="#f59e0b" stroke-dasharray="5 5" stroke-width="1.5" opacity="0.85" />
+            <text x="${width - padX}" y="${avgY - 6}" fill="#fbbf24" font-size="10.5" font-weight="700" font-family="'IBM Plex Sans Arabic', sans-serif" text-anchor="end">${isArabic ? 'المتوسط: ' : 'Avg: '}${benchmarkText}</text>
+        `;
+
+        let dataElements = '';
 
         if (displayMode === 'bar') {
-            // ========================================================
-            // BAR CHART MODE (Default)
-            // ========================================================
-            const barW = Math.min(36, Math.max(14, (chartW / count) * 0.58));
-            let bars = '';
-            values.forEach((val, i) => {
+            const barW = Math.min(32, Math.max(10, (chartW / count) * 0.58));
+            dataElements = values.map((val, i) => {
                 const x = count === 1
                     ? padX + chartW / 2 - barW / 2
                     : padX + (i / count) * chartW + ((chartW / count) - barW) / 2;
-                const bHeight = Math.max(4, ((val - minVal) / (maxVal - minVal || 1)) * chartH);
+                const bHeight = Math.max(3, ((val - minVal) / (maxVal - minVal || 1)) * chartH);
                 const y = height - padY - bHeight;
-
                 let barColor = chartColor;
-                if (chartType === 'csat') {
-                    barColor = getCsatColor(val);
-                }
-
+                if (chartType === 'csat') barColor = getCsatColor(val);
                 const displayVal = formatDisplayVal(val);
-                bars += `
+
+                return `
                     <g class="chart-bar-group" tabindex="0">
                         <title>${days[i]}: ${displayVal}</title>
                         <rect x="${x}" y="${y}" width="${barW}" height="${bHeight}" rx="4" fill="${barColor}" opacity="0.9"></rect>
-                        <text x="${x + barW / 2}" y="${y - 7}" fill="#f8fafc" font-size="10.5" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${displayVal}</text>
-                        <text x="${x + barW / 2}" y="${height - 12}" fill="var(--muted)" font-size="11" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${days[i]}</text>
+                        ${val > 0 ? `<text x="${x + barW / 2}" y="${y - 6}" fill="#f8fafc" font-size="10" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', monospace">${displayVal}</text>` : ''}
+                        <text x="${x + barW / 2}" y="${height - 10}" fill="var(--muted)" font-size="10" text-anchor="middle" font-family="'JetBrains Mono', monospace">${days[i]}</text>
                     </g>
                 `;
-            });
-
-            const avgY = height - padY - ((avgVal - minVal) / (maxVal - minVal || 1)) * chartH;
-            wrap.innerHTML = `
-                <svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;">
-                    <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--border)" stroke-width="1.5"></line>
-                    ${bars}
-                    <line x1="${padX}" y1="${avgY}" x2="${width - padX}" y2="${avgY}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.8"></line>
-                    <text x="${padX + 10}" y="20" fill="#fbbf24" font-size="11" font-weight="700" font-family="'JetBrains Mono', 'Inter', sans-serif" text-anchor="start">${I18N.currentLang === 'ar' ? 'المتوسط: ' : 'Average: '}${benchmarkText}</text>
-                </svg>
-            `;
+            }).join('');
         } else {
-            // ========================================================
-            // LINE CHART MODE
-            // ========================================================
-            const isTimeMetric = (chartType === 'abst' || chartType === 'agbt');
-            const linePoints = values.map((val, i) => {
-                const x = padX + (chartW / Math.max(1, count - 1)) * i;
-                const ratio = (val - minVal) / (maxVal - minVal || 1);
-                // For time metrics (ABST/AGBT): slower/higher time dips DOWN, faster time rises UP
-                const y = isTimeMetric ? padY + ratio * chartH : height - padY - ratio * chartH;
-                return { x, y, val, day: days[i], fullDay: activeDays[i].day, displayVal: formatDisplayVal(val) };
-            });
+            // نمط المنحنى الانسيابي الناعم والمساحة المتدرجة
+            const linePoints = values.map((val, i) => ({
+                x: getX(i),
+                y: getY(val),
+                val,
+                day: days[i],
+                displayVal: formatDisplayVal(val)
+            }));
 
             const pathD = linePoints.reduce((acc, pt, i) => {
                 if (i === 0) return `M ${pt.x} ${pt.y}`;
@@ -2237,43 +2336,41 @@
             }, '');
 
             const fillD = `${pathD} L ${linePoints[linePoints.length - 1].x} ${height - padY} L ${linePoints[0].x} ${height - padY} Z`;
-            const avgRatio = (avgVal - minVal) / (maxVal - minVal || 1);
-            const avgY = isTimeMetric ? padY + avgRatio * chartH : height - padY - avgRatio * chartH;
 
-            let circles = '';
-            linePoints.forEach((pt) => {
-                let pointColor = chartColor;
-                if (chartType === 'csat') {
-                    pointColor = getCsatColor(pt.val);
-                }
-                const textY = (isTimeMetric && pt.y < padY + 18) ? pt.y + 18 : pt.y - 10;
-                circles += `
+            const dots = linePoints.map((pt, i) => {
+                let dotColor = chartColor;
+                if (chartType === 'csat') dotColor = getCsatColor(pt.val);
+                return `
                     <g class="chart-point-group" tabindex="0">
                         <title>${pt.day}: ${pt.displayVal}</title>
-                        <circle cx="${pt.x}" cy="${pt.y}" r="5" fill="${pointColor}" stroke="#0b1329" stroke-width="2" class="chart-dot"></circle>
-                        <text x="${pt.x}" y="${textY}" fill="#f8fafc" font-size="11" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${pt.displayVal}</text>
-                        <text x="${pt.x}" y="${height - 12}" fill="var(--muted)" font-size="11" text-anchor="middle" font-family="'JetBrains Mono', 'Inter', monospace">${pt.day}</text>
+                        <circle cx="${pt.x}" cy="${pt.y}" r="4.5" fill="${dotColor}" stroke="#0b1329" stroke-width="2" class="chart-dot"></circle>
+                        ${pt.val > 0 ? `<text x="${pt.x}" y="${pt.y - 8}" fill="#f8fafc" font-size="10.5" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', monospace">${pt.displayVal}</text>` : ''}
+                        ${(count <= 14 || i % 2 === 0) ? `<text x="${pt.x}" y="${height - 10}" fill="var(--muted)" font-size="10" text-anchor="middle" font-family="'JetBrains Mono', monospace">${pt.day}</text>` : ''}
                     </g>
                 `;
-            });
+            }).join('');
 
-            wrap.innerHTML = `
-                <svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;">
-                    <defs>
-                        <linearGradient id="chartGradDynamic" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="${chartColor}" stop-opacity="0.35"></stop>
-                            <stop offset="100%" stop-color="${chartColor}" stop-opacity="0.0"></stop>
-                        </linearGradient>
-                    </defs>
-                    <path d="${fillD}" fill="url(#chartGradDynamic)"></path>
-                    <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--border)" stroke-width="1.5"></line>
-                    <line x1="${padX}" y1="${avgY}" x2="${width - padX}" y2="${avgY}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.75"></line>
-                    <path d="${pathD}" fill="none" stroke="${chartColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <text x="${padX + 10}" y="20" fill="#fbbf24" font-size="11" font-weight="700" font-family="'JetBrains Mono', 'Inter', sans-serif" text-anchor="start">${I18N.currentLang === 'ar' ? 'المتوسط: ' : 'Average: '}${benchmarkText}</text>
-                    ${circles}
-                </svg>
+            dataElements = `
+                <path d="${fillD}" fill="url(#chartGradDynamic)" opacity="0.3"></path>
+                <path d="${pathD}" fill="none" stroke="${chartColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                ${dots}
             `;
         }
+
+        wrap.innerHTML = `
+            <svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                    <linearGradient id="chartGradDynamic" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="${chartColor}" stop-opacity="0.8"></stop>
+                        <stop offset="100%" stop-color="${chartColor}" stop-opacity="0.0"></stop>
+                    </linearGradient>
+                </defs>
+                ${gridLines}
+                ${avgLine}
+                <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--border)" stroke-width="1.5"></line>
+                ${dataElements}
+            </svg>
+        `;
     }
 
     function loadLocalPreviewMode() {
