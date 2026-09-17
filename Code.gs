@@ -439,6 +439,23 @@ function extractLatenessMetrics(recordsList) {
 /**
  * المحرك الإحصائي الشامل لحساب كافة المقاييس (طِبق الأصل من agent-dashboard-data.js)
  */
+/**
+ * تصفية السجلات لإبقاء صفوف الشهر الحالي فقط (للعرض الحالي، دون المساس بالبيانات الأصلية).
+ * تُستخدم في بناء الملخص بحيث تتصفّر الأرقام عند دخول شهر جديد بينما تبقى الداتا بيز كاملة.
+ */
+function filterRecordsToCurrentMonth(records) {
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  return records.map(rec => {
+    const header = rec.header || [];
+    const rows = (rec.rows || []).filter(row => {
+      const d = extractRowDate(row, header);
+      return d && String(d).slice(0, 7) === ym;
+    });
+    return Object.assign({}, rec, { rows: rows });
+  }).filter(rec => (rec.rows || []).length > 0);
+}
+
 function calculateAnalytics(records, agentFilter = null) {
   if (!Array.isArray(records) || !records.length) {
     return {
@@ -1134,6 +1151,8 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
 
   // 5. تشغيل المحرك الرياضي الشامل المعتمد لحساب كافة مؤشرات الفريق والوكلاء
   const analytics = calculateAnalytics(allUpdatedRecords);
+  // ملخص الشهر الحالي فقط للعرض (الأرقام تتصفّر بدخول شهر جديد دون حذف أي بيانات)
+  const monthAnalytics = calculateAnalytics(filterRecordsToCurrentMonth(allUpdatedRecords));
 
   // قراءة الملخص السابق إن وجد للاحتفاظ ببيانات الوكلاء والمقاييس السابقة وعدم تصفيرها
   let existingOverview = null;
@@ -1175,7 +1194,7 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
   // بناء مصفوفة الوكلاء النهائية للشاشة الرئيسية مع الحفاظ التام على المقاييس
   const finalAgentsList = Array.from(allAgentEmailsSet).map(emLower => {
     const origEmail = analytics.uniqueAgents.find(e => e.toLowerCase() === emLower) || (metaMap[emLower] && metaMap[emLower].email) || emLower;
-    const agStat = analytics.agentStats[origEmail] || analytics.agentStats[emLower] || {};
+    const agStat = monthAnalytics.agentStats[origEmail] || monthAnalytics.agentStats[emLower] || {};
     const meta = metaMap[emLower] || {};
 
     let displayName = meta.name || '';
@@ -1187,48 +1206,36 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
     let csatVal = 0;
     if (agStat.hasCsat && agStat.csatPct !== null) {
       csatVal = agStat.csatPct;
-    } else if (meta.csat !== undefined && meta.csat !== null && meta.csat !== '') {
-      csatVal = parseFloat(String(meta.csat).replace(/%/g, '')) || 0;
     }
 
     // AGBT: الأولوية للملف التفصيلي الفعلي، وإلا الحفاظ التام على بطاقة الملخص
     let agbtVal = "00:00";
     if (agStat.hasAgbt && agStat.agbtDisplay) {
       agbtVal = agStat.agbtDisplay;
-    } else if (meta.agbt) {
-      agbtVal = String(meta.agbt).trim();
     }
 
     // ABST: الأولوية للملف التفصيلي الفعلي، وإلا الحفاظ التام على بطاقة الملخص
     let abstVal = "00:00";
     if (agStat.hasAbst && agStat.abstAvg) {
       abstVal = agStat.abstAvg;
-    } else if (meta.abst) {
-      abstVal = String(meta.abst).trim();
     }
 
     // Break Breach: الأولوية لتفاصيل البريك، وإلا استخدام قيمة الملخص
     let breakVal = "0";
     if (agStat.hasBreak && agStat.breakBreaches !== undefined) {
       breakVal = String(agStat.breakBreaches);
-    } else if (meta.breakBreach !== undefined && meta.breakBreach !== null) {
-      breakVal = String(meta.breakBreach);
     }
 
     // Lateness: الأولوية لتفاصيل التأخير، وإلا استخدام قيمة الملخص
     let latenessVal = 0;
     if (agStat.hasLateness && agStat.latenessMins !== undefined) {
       latenessVal = agStat.latenessMins;
-    } else if (meta.lateness !== undefined && meta.lateness !== null) {
-      latenessVal = parseFloat(meta.lateness) || 0;
     }
 
     // Idle: الأولوية للملف التفصيلي، وإلا استخدام قيمة الملخص
     let idleVal = "0";
     if (agStat.hasIdle && agStat.idleHours !== null && agStat.idleHours !== undefined) {
       idleVal = String(agStat.idleHours);
-    } else if (meta.idle !== undefined && meta.idle !== null) {
-      idleVal = String(meta.idle);
     }
 
     // الإنتاجية Productivity
@@ -1265,16 +1272,16 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
     sumBreaches += (parseInt(a.breakBreach, 10) || 0);
   });
 
-  const teamAvgCsat = analytics.csat.pct !== null 
-    ? `${analytics.csat.pct}%` 
+  const teamAvgCsat = monthAnalytics.csat.pct !== null 
+    ? `${monthAnalytics.csat.pct}%` 
     : (countCsat > 0 ? `${Math.round((sumCsat / countCsat) * 10) / 10}%` : "—");
 
-  const teamTotalLateness = analytics.lateness.totalMins > 0 
-    ? `${analytics.lateness.totalMins}` 
+  const teamTotalLateness = monthAnalytics.lateness.totalMins > 0 
+    ? `${monthAnalytics.lateness.totalMins}` 
     : `${Math.round(sumLateness)}`;
 
-  const teamTotalBreaches = analytics.breakBreach.breaches > 0 
-    ? `${analytics.breakBreach.breaches}` 
+  const teamTotalBreaches = monthAnalytics.breakBreach.breaches > 0 
+    ? `${monthAnalytics.breakBreach.breaches}` 
     : `${sumBreaches}`;
 
   // دمج الأيام التاريخية مع الحفاظ على الأيام السابقة
@@ -1295,6 +1302,7 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
       agbtSecs: t.agbtSecs || 0,
       csat: t.csat || 0,
       csatGood: t.csatGood || 0,
+      csatBad: t.csatBad || 0,
       csatTotal: t.csatTotal || 0,
       long: t.long || 0
     });
@@ -1310,11 +1318,11 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
       avgCsat: teamAvgCsat,
       totalLateness: teamTotalLateness,
       totalBreaches: teamTotalBreaches,
-      totalSessions: analytics.totalSessions,
-      totalLongSessions: analytics.totalLongSessions,
-      avgDailySessions: analytics.avgDailySessions,
-      activeDays: mergedHistoricalDays.length || analytics.activeDays,
-      totalDrillRows: analytics.totalRows,
+      totalSessions: monthAnalytics.totalSessions,
+      totalLongSessions: monthAnalytics.totalLongSessions,
+      avgDailySessions: monthAnalytics.avgDailySessions,
+      activeDays: monthAnalytics.activeDays,
+      totalDrillRows: monthAnalytics.totalRows,
       lastSync: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm'),
       totalMetrics: 7
     },
@@ -1476,9 +1484,26 @@ function getOverviewData() {
 function getAgentDetailData(email, metric) {
   try {
     // 1. إذا كان المطلوب "كل الوكلاء" (مقارنة من جدول الملخص الخفيف)
+    // منع ظهور الوكيل المحظور نهائياً (الحظر = إخفاء فقط، بياناته تبقى محفوظة)
+    if (email && email !== 'all' && email !== '' && isAgentBanned(email)) {
+      return {
+        success: true,
+        found: false,
+        isAllAgents: false,
+        email: email,
+        metric: (metric || 'csat').trim().toLowerCase(),
+        header: [],
+        rows: [],
+        count: 0,
+        message: 'Agent is hidden (banned).'
+      };
+    }
+
     if (!email || email === 'all' || email === '') {
       const overview = getOverviewData();
-      return getAllAgentsMetricSummary(overview.agents || [], metric);
+      const banned = getBannedAgentsSet();
+      const visibleAgents = (overview.agents || []).filter(a => !banned.has(String(a.email || '').toLowerCase().trim()));
+      return getAllAgentsMetricSummary(visibleAgents, metric);
     }
 
     // 2. قراءة ملف المقياس المعزول حصرياً للوكيل والمقياس المطلوب فقط
@@ -1685,7 +1710,15 @@ function getTargetSpreadsheet() {
 
 // دوال التوافق التي تستدعيها الواجهة الأمامية
 function getDashboardDataFromSheet() {
-  return getOverviewData();
+  const res = getOverviewData();
+  if (res && res.success && Array.isArray(res.agents)) {
+    const banned = getBannedAgentsSet();
+    if (banned.size > 0) {
+      res.agents = res.agents.filter(a => !banned.has(String(a.email || '').toLowerCase().trim()));
+      if (res.summary) res.summary.totalAgents = res.agents.length;
+    }
+  }
+  return res;
 }
 
 function getAgentDrillRowsFromSheet(email, metric) {
@@ -1728,6 +1761,11 @@ function getAgentDailyTimeline(email) {
   try {
     if (!email) {
       return { success: false, email: email, days: [] };
+    }
+
+    // منع ظهور الخط الزمني للوكيل المحظور
+    if (isAgentBanned(email)) {
+      return { success: true, email: email, days: [] };
     }
 
     // 1. كاش سريع أولاً
@@ -1983,6 +2021,294 @@ function getSpreadsheetUrl() {
     return ss ? ss.getUrl() : "";
   } catch (e) {
     return "";
+  }
+}
+
+/**
+ * ============================================================================
+ * إدارة المستخدمين (حظر / إلغاء حظر / حذف) — صلاحيات المدير
+ * - الحظر: إخفاء الوكيل من الظهور في الموقع فقط، دون أي تأثير على بياناته
+ *          (تستمر عملية الحفظ والتسجيل له بشكل طبيعي).
+ * - إلغاء الحظر: إعادة ظهوره فوراً بكامل بياناته.
+ * - الحذف: إزالة بيانات الوكيل نهائياً من Drive (يتطلب تأكيداً كتابياً في الواجهة).
+ * ============================================================================
+ */
+
+const BANNED_FILE_NAME = "banned_agents.json";
+
+function getBannedAgentsSet() {
+  try {
+    const folder = getOrCreateDataFolder();
+    const files = folder.getFilesByName(BANNED_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getBlob().getDataAsString();
+      const arr = JSON.parse(content || '[]');
+      return new Set(Array.isArray(arr) ? arr.map(x => String(x).toLowerCase().trim()).filter(Boolean) : []);
+    }
+  } catch (e) {
+    console.warn('getBannedAgentsSet warning:', e.message);
+  }
+  return new Set();
+}
+
+function saveBannedAgentsSet(set) {
+  const folder = getOrCreateDataFolder();
+  const content = JSON.stringify(Array.from(set));
+  const files = folder.getFilesByName(BANNED_FILE_NAME);
+  if (files.hasNext()) {
+    files.next().setContent(content);
+  } else {
+    folder.createFile(BANNED_FILE_NAME, content, MimeType.PLAIN_TEXT);
+  }
+}
+
+function isAgentBanned(email) {
+  return getBannedAgentsSet().has(String(email || '').toLowerCase().trim());
+}
+
+function setAgentBanned(email, banned) {
+  try {
+    const key = String(email || '').toLowerCase().trim();
+    if (!key) return { success: false, message: 'Invalid email address.' };
+    const set = getBannedAgentsSet();
+    if (banned) set.add(key); else set.delete(key);
+    saveBannedAgentsSet(set);
+    clearCachedOverview();
+    logSystemEvent(banned ? 'WARN' : 'INFO', banned ? 'Ban Agent' : 'Unban Agent',
+      `تم ${banned ? 'حظر' : 'إلغاء حظر'} الوكيل (${key})`);
+    return { success: true, email: key, banned: !!banned, bannedAgents: Array.from(set) };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function getBannedAgentsList() {
+  try {
+    return { success: true, bannedAgents: Array.from(getBannedAgentsSet()) };
+  } catch (e) {
+    return { success: false, message: e.message, bannedAgents: [] };
+  }
+}
+
+function getAllAgentsForAdmin() {
+  try {
+    const overview = getOverviewData();
+    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
+    const bannedSet = getBannedAgentsSet();
+
+    // عدّ ملفات المقاييس لكل وكيل من مجلد drills (استناداً إلى بادئة slug)
+    const filesCountByPrefix = new Map();
+    const drillsFolder = getOrCreateDrillsFolder();
+    const files = drillsFolder.getFiles();
+    while (files.hasNext()) {
+      const name = files.next().getName();
+      if (!name.endsWith('.json')) continue;
+      const idx = name.lastIndexOf('_');
+      if (idx === -1) continue;
+      const prefix = name.slice(0, idx);
+      filesCountByPrefix.set(prefix, (filesCountByPrefix.get(prefix) || 0) + 1);
+    }
+
+    const list = agents.map(a => {
+      const email = String(a.email || '').toLowerCase().trim();
+      const slug = getAgentFileSlug(email);
+      return {
+        email: email,
+        name: a.name || email,
+        banned: bannedSet.has(email),
+        metricFiles: filesCountByPrefix.get(slug) || 0,
+        csat: a.csat,
+        rowsCount: a.rowsCount || 0
+      };
+    });
+
+    return { success: true, agents: list, bannedAgents: Array.from(bannedSet) };
+  } catch (e) {
+    return { success: false, message: e.message, agents: [], bannedAgents: [] };
+  }
+}
+
+function getAdminStats() {
+  try {
+    const overview = getOverviewData();
+    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
+    const summary = (overview && overview.summary) ? overview.summary : {};
+    return {
+      success: true,
+      totalAgents: agents.length,
+      totalRows: summary.totalDrillRows || 0,
+      totalMetrics: 7,
+      worksheet: 'Daily_Summary'
+    };
+  } catch (e) {
+    return { success: false, totalAgents: 0, totalRows: 0, totalMetrics: 7, worksheet: 'Daily_Summary' };
+  }
+}
+
+function deleteAgentData(email) {
+  try {
+    const key = String(email || '').toLowerCase().trim();
+    if (!key) return { success: false, message: 'Invalid email address.' };
+
+    // 1. حذف جميع ملفات المقاييس الخاصة بالوكيل من مجلد drills
+    const drillsFolder = getOrCreateDrillsFolder();
+    const prefix = getAgentFileSlug(email) + '_';
+    let deletedFiles = 0;
+    const toDelete = [];
+    const files = drillsFolder.getFiles();
+    while (files.hasNext()) {
+      const f = files.next();
+      const name = f.getName();
+      if (name.endsWith('.json') && name.indexOf(prefix) === 0) toDelete.push(f);
+    }
+    toDelete.forEach(f => {
+      try { drillsFolder.removeFile(f); deletedFiles++; } catch (e) { console.warn('removeFile warning:', e.message); }
+    });
+
+    // 2. إزالة الوكيل من ملف summary_overview.json
+    const folder = getOrCreateDataFolder();
+    const sumFiles = folder.getFilesByName(CONFIG.SUMMARY_FILE_NAME);
+    if (sumFiles.hasNext()) {
+      const sf = sumFiles.next();
+      try {
+        const data = JSON.parse(sf.getBlob().getDataAsString());
+        if (data && Array.isArray(data.agents)) {
+          data.agents = data.agents.filter(a => String(a.email || '').toLowerCase().trim() !== key);
+          if (data.summary) data.summary.totalAgents = data.agents.length;
+          sf.setContent(JSON.stringify(data));
+        }
+      } catch (e) { console.warn('deleteAgentData summary update warning:', e.message); }
+    }
+
+    // 3. إزالة من قائمة الحظر + إبطال الكاش
+    const set = getBannedAgentsSet();
+    set.delete(key);
+    saveBannedAgentsSet(set);
+    clearCachedOverview();
+    clearCachedAgentTimeline(email);
+
+    logSystemEvent('WARN', 'Delete Agent Data',
+      `تم حذف بيانات الوكيل (${email}) نهائياً — عدد الملفات المحذوفة: ${deletedFiles}`);
+
+    return { success: true, email: key, deletedFiles: deletedFiles };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * ============================================================================
+ * جداول الأسبوعي والشهري (Weekly / Monthly Pivot) — جدول تقاطعي:
+ * الصفوف = الوكلاء، الأعمدة = الفترات (أسابيع أو شهور)، الخلية = قيمة المقياس.
+ * ============================================================================
+ */
+
+function buildWeeklyPeriods() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-based
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const periods = [];
+  let w = 1;
+  for (let start = 1; start <= daysInMonth; start += 7) {
+    const end = Math.min(start + 6, daysInMonth);
+    periods.push({ key: 'W' + w, label: 'أسبوع ' + w, range: start + '-' + end, year: year, month: month + 1, startDay: start, endDay: end });
+    w++;
+  }
+  return periods;
+}
+
+function buildMonthlyPeriods(count) {
+  const periods = [];
+  const now = new Date();
+  const n = (count || 6);
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const mo = d.getMonth() + 1;
+    periods.push({ key: y + '-' + String(mo).padStart(2, '0'), label: y + '-' + String(mo).padStart(2, '0'), range: '', year: y, month: mo });
+  }
+  return periods;
+}
+
+function periodKeyForDay(dayStr, type, periods) {
+  if (!dayStr) return null;
+  const parts = String(dayStr).split('-');
+  if (parts.length < 3) return null;
+  const y = parseInt(parts[0], 10);
+  const mo = parseInt(parts[1], 10);
+  const dd = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(mo) || isNaN(dd)) return null;
+  if (type === 'monthly') {
+    return periods.some(p => p.year === y && p.month === mo) ? (y + '-' + String(mo).padStart(2, '0')) : null;
+  }
+  const p = periods.find(pp => pp.year === y && pp.month === mo && dd >= pp.startDay && dd <= pp.endDay);
+  return p ? p.key : null;
+}
+
+function computePeriodValue(agg, m) {
+  if (!agg) return null;
+  if (m === 'csat') {
+    const total = agg.csatGood + agg.csatBad;
+    if (total <= 0) return null;
+    return Math.round((agg.csatGood / total) * 1000) / 10;
+  }
+  if (m === 'abst') {
+    return agg.abstCount > 0 ? Math.round((agg.abstSum / agg.abstCount) * 10) / 10 : null;
+  }
+  if (m === 'sessions') {
+    return agg.sessions;
+  }
+  return null;
+}
+
+function metricLabelForPeriod(m) {
+  if (m === 'abst') return 'ABST (دقيقة)';
+  if (m === 'sessions') return 'Sessions';
+  return 'CSAT %';
+}
+
+function getAgentsPeriodTable(metric, periodType) {
+  try {
+    const m = (metric || 'csat').toLowerCase();
+    const type = (periodType || 'weekly').toLowerCase();
+
+    const overview = getDashboardDataFromSheet();
+    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
+    const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods();
+
+    const rows = [];
+    for (const a of agents) {
+      const tl = getAgentDailyTimeline(a.email);
+      const days = (tl && Array.isArray(tl.days)) ? tl.days : [];
+      const agg = {};
+      for (const d of days) {
+        const key = periodKeyForDay(d.day, type, periods);
+        if (!key) continue;
+        if (!agg[key]) agg[key] = { csatGood: 0, csatBad: 0, abstSum: 0, abstCount: 0, sessions: 0 };
+        agg[key].csatGood += Number(d.csatGood) || 0;
+        agg[key].csatBad += Number(d.csatBad) || 0;
+        agg[key].sessions += Number(d.sessions) || 0;
+        const abst = Number(d.abstMins) || 0;
+        if (abst > 0) { agg[key].abstSum += abst; agg[key].abstCount++; }
+      }
+      const values = {};
+      for (const p of periods) {
+        values[p.key] = computePeriodValue(agg[p.key], m);
+      }
+      rows.push({ email: a.email, name: a.name || a.email, values: values });
+    }
+
+    return {
+      success: true,
+      metric: m,
+      periodType: type,
+      metricLabel: metricLabelForPeriod(m),
+      periods: periods.map(p => ({ key: p.key, label: p.label, range: p.range || '' })),
+      agents: rows
+    };
+  } catch (e) {
+    return { success: false, message: e.message, agents: [], periods: [] };
   }
 }
 

@@ -2049,6 +2049,170 @@ dialog.export-dialog::backdrop {
     color: #34d399;
 }
 
+/* شريط التبويبات الداخلية للوكلاء (All Agents + تبويبات الوكلاء المفتوحة) */
+.agent-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 18px 0;
+    padding: 6px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(8px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    flex-wrap: nowrap;
+}
+
+.agent-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 14px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    font-family: inherit;
+    flex-shrink: 0;
+}
+
+.agent-tab-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-tab-btn.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.22) 0%, rgba(16, 185, 129, 0.18) 100%);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #bae6fd;
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.18);
+}
+
+.agent-tab-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.agent-tab-name {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+    border-radius: 50%;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--muted);
+    transition: all 0.15s ease;
+}
+
+.agent-tab-close:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fecaca;
+}
+
+/* Weekly / Monthly Pivot Tables */
+.period-view-section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    animation: fadeInTab 0.3s ease-out;
+}
+
+.period-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.period-header h2 {
+    font-size: 18px;
+    color: #f8fafc;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.period-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: rgba(15, 23, 42, 0.5);
+}
+
+.period-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 480px;
+}
+
+.period-table thead th {
+    padding: 12px 10px;
+    background: rgba(30, 41, 59, 0.7);
+    color: #e2e8f0;
+    font-weight: 700;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.period-table thead th small {
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.period-table tbody td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+.period-table tbody tr:hover {
+    background: rgba(56, 189, 248, 0.05);
+}
+
+.period-table .period-agent-col {
+    text-align: left;
+    direction: ltr;
+    font-weight: 700;
+    color: #f1f5f9;
+    white-space: nowrap;
+    position: sticky;
+    left: 0;
+    background: #0f172a;
+    z-index: 1;
+}
+
+.period-cell {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.period-cell.good { color: #34d399; }
+.period-cell.mid { color: #fbbf24; }
+.period-cell.bad { color: #f87171; }
+.period-cell.empty { color: var(--muted); opacity: 0.5; }
+
 /* Analytics View Section */
 .analytics-view-section {
     display: flex;
@@ -3150,40 +3314,20 @@ dialog.export-dialog::backdrop {
             <span data-i18n="tabStatsView">Performance Analytics & Charts</span>
             <span class="tab-badge" id="statsTabBadge">0</span>
         </button>
+        <button type="button" class="main-view-tab-btn" role="tab" id="tabWeeklyView" aria-selected="false" aria-controls="viewWeeklySection">
+            <span class="tab-icon" aria-hidden="true">📅</span>
+            <span data-i18n="tabWeeklyView">Weekly</span>
+        </button>
+        <button type="button" class="main-view-tab-btn" role="tab" id="tabMonthlyView" aria-selected="false" aria-controls="viewMonthlySection">
+            <span class="tab-icon" aria-hidden="true">🗓️</span>
+            <span data-i18n="tabMonthlyView">Monthly</span>
+        </button>
     </nav>
 
     <!-- 1. Data & Tables Workspace View -->
     <div id="viewDataSection" class="view-panel-section">
-        <section class="stats" aria-label="Sheet Summary">
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">📁</span>
-                    <span data-i18n="statSheet">Worksheet</span>
-                </div>
-                <strong id="fileCount" style="font-size: 16px;">Daily_Summary</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">👤</span>
-                    <span data-i18n="statAgents">Agents</span>
-                </div>
-                <strong id="agentCount">0</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">📊</span>
-                    <span data-i18n="statMetrics">Metrics</span>
-                </div>
-                <strong id="resultCount">7</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">🔢</span>
-                    <span data-i18n="statRows">Recorded Rows</span>
-                </div>
-                <strong id="rowCount">0</strong>
-            </div>
-        </section>
+        <!-- شريط التبويبات الداخلية: كل الوكلاء (ثابت) + تبويب لكل وكيل مفتوح -->
+        <nav id="agentTabsBar" class="agent-tabs-bar" role="tablist" aria-label="Agent tabs"></nav>
 
         <div class="workspace" id="workspaceContainer">
             <!-- Left Side Panel: Results and Agents (Hidden in All Agents mode) -->
@@ -3519,6 +3663,50 @@ dialog.export-dialog::backdrop {
                 </div>
             </div>
         </div>
+    </section>
+
+    <!-- 3. Weekly View (Pivot Table) -->
+    <section id="viewWeeklySection" class="view-panel-section period-view-section" hidden aria-label="Weekly">
+        <div class="period-header">
+            <div>
+                <h2>📅 Weekly Performance</h2>
+                <p class="muted">قيم جميع الوكلاء خلال أسابيع الشهر الحالي بناءً على مقياس محدد.</p>
+            </div>
+            <div class="filter-group-inline">
+                <label for="weeklyMetricSelect">المقياس:</label>
+                <select id="weeklyMetricSelect">
+                    <option value="csat" selected>CSAT</option>
+                    <option value="abst">ABST</option>
+                    <option value="sessions">Sessions</option>
+                </select>
+            </div>
+        </div>
+        <div class="period-table-wrap">
+            <table class="period-table" id="weeklyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+        </div>
+        <p class="muted" id="weeklyEmpty" hidden>لا توجد بيانات أسبوعية بعد.</p>
+    </section>
+
+    <!-- 4. Monthly View (Pivot Table) -->
+    <section id="viewMonthlySection" class="view-panel-section period-view-section" hidden aria-label="Monthly">
+        <div class="period-header">
+            <div>
+                <h2>🗓️ Monthly Performance</h2>
+                <p class="muted">قيم جميع الوكلاء خلال آخر 6 أشهر بناءً على مقياس محدد.</p>
+            </div>
+            <div class="filter-group-inline">
+                <label for="monthlyMetricSelect">المقياس:</label>
+                <select id="monthlyMetricSelect">
+                    <option value="csat" selected>CSAT</option>
+                    <option value="abst">ABST</option>
+                    <option value="sessions">Sessions</option>
+                </select>
+            </div>
+        </div>
+        <div class="period-table-wrap">
+            <table class="period-table" id="monthlyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+        </div>
+        <p class="muted" id="monthlyEmpty" hidden>لا توجد بيانات شهرية بعد.</p>
     </section>
 
     <p class="footnote" data-i18n="footerNotice">Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.</p>
@@ -4111,6 +4299,8 @@ dialog.export-dialog::backdrop {
         chartEndDate: '',
         selectedAgent: '', // '' = All Agents
         selectedMetric: 'all',
+        agentTabs: [],          // تبويبات الوكلاء المفتوحة داخلياً { email, name }
+        activeTabId: 'all',     // 'all' أو 'agent:email'
         drillRecords: {},
         activeDrillData: null,
         searchQuery: '',
@@ -4202,33 +4392,114 @@ dialog.export-dialog::backdrop {
     }
 
     function setupTabNavigation() {
-        const tabData = el('tabDataView');
-        const tabStats = el('tabStatsView');
-        const viewData = el('viewDataSection');
-        const viewStats = el('viewStatsSection');
+        const tabs = [
+            { name: 'data', btn: el('tabDataView'), section: el('viewDataSection') },
+            { name: 'stats', btn: el('tabStatsView'), section: el('viewStatsSection') },
+            { name: 'weekly', btn: el('tabWeeklyView'), section: el('viewWeeklySection') },
+            { name: 'monthly', btn: el('tabMonthlyView'), section: el('viewMonthlySection') }
+        ].filter(t => t.btn && t.section);
 
-        if (tabData && tabStats && viewData && viewStats) {
-            tabData.addEventListener('click', () => {
-                tabData.classList.add('active');
-                tabData.setAttribute('aria-selected', 'true');
-                tabStats.classList.remove('active');
-                tabStats.setAttribute('aria-selected', 'false');
-                viewData.hidden = false;
-                viewStats.hidden = true;
-                AppState.currentMainTab = 'data';
+        function activate(name) {
+            AppState.currentMainTab = name;
+            tabs.forEach(t => {
+                const active = (t.name === name);
+                t.btn.classList.toggle('active', active);
+                t.btn.setAttribute('aria-selected', active ? 'true' : 'false');
+                t.section.hidden = !active;
             });
-
-            tabStats.addEventListener('click', () => {
-                tabStats.classList.add('active');
-                tabStats.setAttribute('aria-selected', 'true');
-                tabData.classList.remove('active');
-                tabData.setAttribute('aria-selected', 'false');
-                viewData.hidden = true;
-                viewStats.hidden = false;
-                AppState.currentMainTab = 'stats';
-                renderAnalyticsView();
-            });
+            if (name === 'stats') renderAnalyticsView();
+            if (name === 'weekly') loadPeriodTable('weekly');
+            if (name === 'monthly') loadPeriodTable('monthly');
         }
+
+        tabs.forEach(t => t.btn.addEventListener('click', () => activate(t.name)));
+
+        // منتقي المقياس لجداول الأسبوعي/الشهري
+        const weeklySel = el('weeklyMetricSelect');
+        const monthlySel = el('monthlyMetricSelect');
+        if (weeklySel) weeklySel.addEventListener('change', () => loadPeriodTable('weekly'));
+        if (monthlySel) monthlySel.addEventListener('change', () => loadPeriodTable('monthly'));
+    }
+
+    // ============ جداول الأسبوعي / الشهري (Weekly / Monthly Pivot) ============
+    function escPeriod(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function loadPeriodTable(periodType) {
+        const metricSelect = el(periodType === 'weekly' ? 'weeklyMetricSelect' : 'monthlyMetricSelect');
+        const tableEl = el(periodType === 'weekly' ? 'weeklyTable' : 'monthlyTable');
+        const emptyEl = el(periodType === 'weekly' ? 'weeklyEmpty' : 'monthlyEmpty');
+        const metric = metricSelect ? metricSelect.value : 'csat';
+
+        if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري تحميل الجدول...</td></tr></tbody>';
+        if (emptyEl) emptyEl.hidden = true;
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(res => renderPeriodTable(res, periodType))
+                .withFailureHandler(err => {
+                    if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">❌ ' + escPeriod(err.message) + '</td></tr></tbody>';
+                })
+                .getAgentsPeriodTable(metric, periodType);
+        } else {
+            if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">هذا الجدول متاح في النسخة المنشورة على Google Apps Script.</td></tr></tbody>';
+        }
+    }
+
+    function renderPeriodTable(res, periodType) {
+        const tableEl = el(periodType === 'weekly' ? 'weeklyTable' : 'monthlyTable');
+        const emptyEl = el(periodType === 'weekly' ? 'weeklyEmpty' : 'monthlyEmpty');
+        if (!tableEl) return;
+
+        const agents = (res && Array.isArray(res.agents)) ? res.agents : [];
+        const periods = (res && Array.isArray(res.periods)) ? res.periods : [];
+        const metric = (res && res.metric) || 'csat';
+
+        if (!agents.length || !periods.length) {
+            tableEl.innerHTML = '';
+            if (emptyEl) emptyEl.hidden = false;
+            return;
+        }
+        if (emptyEl) emptyEl.hidden = true;
+
+        let html = '<thead><tr><th class="period-agent-col">الوكيل</th>';
+        periods.forEach(p => {
+            html += '<th>' + escPeriod(p.label) + (p.range ? '<small style="display:block;font-weight:400;">(' + escPeriod(p.range) + ')</small>' : '') + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+
+        agents.forEach(a => {
+            html += '<tr><td class="period-agent-col" dir="auto">' + escPeriod(a.name || a.email) + '</td>';
+            periods.forEach(p => {
+                const v = (a.values && a.values[p.key] !== undefined) ? a.values[p.key] : null;
+                html += periodCellHtml(v, metric);
+            });
+            html += '</tr>';
+        });
+        html += '</tbody>';
+        tableEl.innerHTML = html;
+    }
+
+    function periodCellHtml(v, metric) {
+        if (v === null || v === undefined) {
+            return '<td class="period-cell empty">—</td>';
+        }
+        let cls = '';
+        let text = '';
+        if (metric === 'csat') {
+            if (v >= 90) cls = 'good';
+            else if (v < 75) cls = 'bad';
+            else cls = 'mid';
+            text = v + '%';
+        } else if (metric === 'abst') {
+            text = v + ' د';
+        } else {
+            text = String(v);
+        }
+        return '<td class="period-cell ' + cls + '" title="' + text + '">' + text + '</td>';
     }
 
     function setupChartTabs() {
@@ -4336,16 +4607,11 @@ dialog.export-dialog::backdrop {
         const btnBackToAll = el('btnBackToAllAgents');
         if (btnBackToAll) {
             btnBackToAll.addEventListener('click', () => {
-                AppState.selectedAgent = '';
-                const agentSel = el('agent');
-                if (agentSel) agentSel.value = '';
                 AppState.page = 0;
                 AppState.searchQuery = '';
                 if (el('search')) el('search').value = '';
                 resetDetailFilters();
-                renderResultsList();
-                renderDetailView();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                activateAgentTab('all');
             });
         }
 
@@ -4365,13 +4631,15 @@ dialog.export-dialog::backdrop {
         const agentSelect = el('agent');
         if (agentSelect) {
             agentSelect.addEventListener('change', (e) => {
-                AppState.selectedAgent = e.target.value;
                 AppState.page = 0;
                 AppState.searchQuery = '';
                 if (el('search')) el('search').value = '';
                 resetDetailFilters();
-                renderResultsList();
-                renderDetailView();
+                if (e.target.value) {
+                    openAgentTab(e.target.value);
+                } else {
+                    activateAgentTab('all');
+                }
             });
         }
 
@@ -4752,8 +5020,10 @@ dialog.export-dialog::backdrop {
     }
 
     function updateTopStats(summary) {
-        el('agentCount').textContent = summary?.totalAgents || AppState.agents.length;
-        el('rowCount').textContent = summary?.totalDrillRows || (AppState.agents.length * 7);
+        const agentCountEl = el('agentCount');
+        const rowCountEl = el('rowCount');
+        if (agentCountEl) agentCountEl.textContent = summary?.totalAgents || AppState.agents.length;
+        if (rowCountEl) rowCountEl.textContent = summary?.totalDrillRows || (AppState.agents.length * 7);
         const badge = el('statsTabBadge');
         if (badge) badge.textContent = AppState.agents.length;
     }
@@ -4804,10 +5074,7 @@ dialog.export-dialog::backdrop {
                 <small style="color: var(--muted);">${I18N.t('allAgentsMeta', { metric: 'All' })}</small>
             `;
             allBtn.addEventListener('click', () => {
-                AppState.selectedAgent = '';
-                el('agent').value = '';
-                renderResultsList();
-                renderDetailView();
+                activateAgentTab('all');
             });
             container.appendChild(allBtn);
 
@@ -4823,10 +5090,7 @@ dialog.export-dialog::backdrop {
                     <small style="color: var(--muted);">${agent.email}</small>
                 `;
                 btn.addEventListener('click', () => {
-                    AppState.selectedAgent = agent.email;
-                    el('agent').value = agent.email;
-                    renderResultsList();
-                    renderDetailView();
+                    openAgentTab(agent.email);
                 });
                 container.appendChild(btn);
             });
@@ -4852,12 +5116,7 @@ dialog.export-dialog::backdrop {
             <small style="color: var(--muted);">${I18N.t('sidebarBackToAllDesc')}</small>
         `;
         backToAllBtn.addEventListener('click', () => {
-            AppState.selectedAgent = '';
-            const agentSel = el('agent');
-            if (agentSel) agentSel.value = '';
-            AppState.page = 0;
-            renderResultsList();
-            renderDetailView();
+            activateAgentTab('all');
         });
         container.appendChild(backToAllBtn);
 
@@ -4898,6 +5157,7 @@ dialog.export-dialog::backdrop {
      * بناء قسم التفاصيل (Detail View)
      */
     function renderDetailView() {
+        renderAgentTabs();
         const isAllAgents = !AppState.selectedAgent;
         const metric = AppState.selectedMetric || 'all';
 
@@ -5487,13 +5747,87 @@ dialog.export-dialog::backdrop {
         return text;
     }
 
-    window.selectAgentFromTable = (email) => {
-        AppState.selectedAgent = email;
+    // ---------------------------------------------------------------------------
+    // نظام التبويبات الداخلية للوكلاء (All Agents ثابت + تبويب لكل وكيل مفتوح)
+    // ---------------------------------------------------------------------------
+    function currentActiveEmail() {
+        if (!AppState.activeTabId || AppState.activeTabId === 'all') return '';
+        return AppState.activeTabId.startsWith('agent:') ? AppState.activeTabId.slice(6) : AppState.activeTabId;
+    }
+
+    function renderAgentTabs() {
+        const bar = el('agentTabsBar');
+        if (!bar) return;
+        bar.innerHTML = '';
+
+        // التبويب الثابت: كل الوكلاء
+        const allTab = document.createElement('button');
+        allTab.type = 'button';
+        allTab.className = 'agent-tab-btn' + (AppState.activeTabId === 'all' ? ' active' : '');
+        allTab.setAttribute('role', 'tab');
+        allTab.setAttribute('aria-selected', AppState.activeTabId === 'all' ? 'true' : 'false');
+        allTab.innerHTML = `<span class="agent-tab-icon">👥</span><span class="agent-tab-name">${I18N.currentLang === 'ar' ? 'كل الوكلاء' : 'All Agents'}</span>`;
+        allTab.addEventListener('click', () => activateAgentTab('all'));
+        bar.appendChild(allTab);
+
+        // تبويبات الوكلاء المفتوحة (قابلة للإغلاق)
+        AppState.agentTabs.forEach(tab => {
+            const tabId = 'agent:' + tab.email;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'agent-tab-btn' + (AppState.activeTabId === tabId ? ' active' : '');
+            btn.setAttribute('role', 'tab');
+            btn.setAttribute('aria-selected', AppState.activeTabId === tabId ? 'true' : 'false');
+            btn.innerHTML = `
+                <span class="agent-tab-icon">👤</span>
+                <span class="agent-tab-name">${tab.name || tab.email}</span>
+                <span class="agent-tab-close" title="${I18N.currentLang === 'ar' ? 'إغلاق التبويب' : 'Close tab'}">×</span>
+            `;
+            btn.addEventListener('click', (e) => {
+                if (e.target.classList.contains('agent-tab-close')) {
+                    closeAgentTab(tabId);
+                } else {
+                    activateAgentTab(tabId);
+                }
+            });
+            bar.appendChild(btn);
+        });
+    }
+
+    function activateAgentTab(tabId) {
+        AppState.activeTabId = tabId;
+        AppState.selectedAgent = currentActiveEmail();
         const agentSel = el('agent');
-        if (agentSel) agentSel.value = email;
+        if (agentSel) agentSel.value = AppState.selectedAgent || '';
+        AppState.page = 0;
+        renderAgentTabs();
         renderResultsList();
         renderDetailView();
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function openAgentTab(email) {
+        const agent = AppState.agents.find(a => a.email === email) || { email, name: email };
+        if (!AppState.agentTabs.some(t => t.email === email)) {
+            AppState.agentTabs.push({ email, name: agent.name });
+        }
+        activateAgentTab('agent:' + email);
+    }
+
+    function closeAgentTab(tabId) {
+        const email = tabId.startsWith('agent:') ? tabId.slice(6) : tabId;
+        const idx = AppState.agentTabs.findIndex(t => t.email === email);
+        if (idx !== -1) AppState.agentTabs.splice(idx, 1);
+        if (AppState.activeTabId === tabId) {
+            activateAgentTab('all');
+        } else {
+            renderAgentTabs();
+        }
+    }
+
+    // زر "التفاصيل/عرض التذاكر" داخل جدول كل الوكلاء يفتح تبويب الوكيل
+    window.selectAgentFromTable = (email) => {
+        openAgentTab(email);
     };
 
     function downloadTableCsv() {
@@ -6054,6 +6388,9 @@ dialog.export-dialog::backdrop {
                     abstSecs: e.abstCount > 0 ? Math.round(e.abstTotalSecs / e.abstCount) : 0,
                     agbtSecs: e.agbtCount > 0 ? Math.round(e.agbtTotalSecs / e.agbtCount) : 0,
                     csat: csatEval > 0 ? Math.round((e.csatGood / csatEval) * 100) : 0,
+                    csatGood: e.csatGood || 0,
+                    csatBad: e.csatBad || 0,
+                    csatTotal: csatEval,
                     long: e.long
                 };
             });
@@ -6102,17 +6439,18 @@ dialog.export-dialog::backdrop {
             ? AppState.chartDays
             : [];
 
+        // كل مقياس يعرض فقط الأيام التي تحمل بيانات فعلية لهذا المقياس،
+        // ولا يُرسم أي يوم فارغ (يمنع الانخفاض المفاجئ للصفر في الرسم)
         let activeDays = allRecordedDays.filter(d => {
-            if (chartType === 'csat') return Number(d.csat) > 0 || Number(d.csatTotal) > 0 || Number(d.sessions) > 0;
+            if (chartType === 'csat') {
+                const evaluated = Number(d.csatTotal) > 0 || Number(d.csatGood) > 0 || Number(d.csatBad) > 0;
+                return evaluated || Number(d.csat) > 0;
+            }
             if (chartType === 'abst') return Number(d.abstSecs) > 0 || Number(d.abstMins) > 0;
             if (chartType === 'agbt') return Number(d.agbtSecs) > 0 || Number(d.agbtMins) > 0;
-            if (chartType === 'long') return Number(d.long) > 0;
+            if (chartType === 'long') return Number(d.long) > 0 || Number(d.longSessions) > 0;
             return Number(d.sessions) > 0;
         });
-
-        if (activeDays.length === 0) {
-            activeDays = allRecordedDays.filter(d => Number(d.sessions) > 0 || Number(d.csat) > 0 || Number(d.abstSecs) > 0);
-        }
 
         activeDays.sort((a, b) => (a.day || '').localeCompare(b.day || ''));
 
@@ -6179,8 +6517,8 @@ dialog.export-dialog::backdrop {
         if (el('chartLegendText')) el('chartLegendText').textContent = legendText;
         if (el('chartBadgeDot')) el('chartBadgeDot').style.background = chartColor;
 
-        const hasNonZero = values.some(v => v > 0);
-        if (activeDays.length === 0 || !hasNonZero) {
+        // الأيام الفارغة تم استبعادها مسبقاً في الفلتر، لذا يكفي فحص وجود أيام
+        if (activeDays.length === 0) {
             wrap.innerHTML = `
                 <div style="text-align:center; padding:55px 20px; color:var(--muted); font-size:13px; line-height:1.7;">
                     <span style="font-size:26px; display:block; margin-bottom:8px;">📊</span>
@@ -6233,6 +6571,25 @@ dialog.export-dialog::backdrop {
             return `${val}`;
         }
 
+        // تلميح تفصيلي لكل نقطة/عمود: يوضح عدد التقييمات (CSAT إيجابي / DSAT سلبي)
+        function tooltipFor(i, displayVal) {
+            const d = activeDays[i] || {};
+            const date = d.day || days[i] || '';
+            const lines = [date + ': ' + displayVal];
+            if (chartType === 'csat') {
+                const good = Number(d.csatGood) || 0;
+                const bad = Number(d.csatBad) || 0;
+                const total = Number(d.csatTotal) || (good + bad);
+                if (total > 0) {
+                    lines.push(isArabic ? 'التقييمات المسجلة: ' + total : 'Evaluations: ' + total);
+                    lines.push(isArabic ? 'CSAT إيجابي: ' + good + '  •  DSAT سلبي: ' + bad : 'CSAT positive: ' + good + '  •  DSAT negative: ' + bad);
+                }
+            } else if (Number(d.sessions) > 0) {
+                lines.push(isArabic ? 'السيشنات: ' + Number(d.sessions) : 'Sessions: ' + Number(d.sessions));
+            }
+            return lines.join('\n');
+        }
+
         const getX = i => padX + (count === 1 ? chartW / 2 : (i / (count - 1)) * chartW);
         const getY = val => height - padY - ((val - minVal) / (maxVal - minVal || 1)) * chartH;
 
@@ -6276,7 +6633,7 @@ dialog.export-dialog::backdrop {
 
                 return `
                     <g class="chart-bar-group" tabindex="0">
-                        <title>${days[i]}: ${displayVal}</title>
+                        <title>${tooltipFor(i, displayVal)}</title>
                         <rect x="${x}" y="${y}" width="${barW}" height="${bHeight}" rx="4" fill="${barColor}" opacity="0.9"></rect>
                         ${val > 0 ? `<text x="${x + barW / 2}" y="${y - 6}" fill="#f8fafc" font-size="10" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', monospace">${displayVal}</text>` : ''}
                         <text x="${x + barW / 2}" y="${height - 10}" fill="var(--muted)" font-size="10" text-anchor="middle" font-family="'JetBrains Mono', monospace">${days[i]}</text>
@@ -6307,7 +6664,7 @@ dialog.export-dialog::backdrop {
                 if (chartType === 'csat') dotColor = getCsatColor(pt.val);
                 return `
                     <g class="chart-point-group" tabindex="0">
-                        <title>${pt.day}: ${pt.displayVal}</title>
+                        <title>${tooltipFor(i, pt.displayVal)}</title>
                         <circle cx="${pt.x}" cy="${pt.y}" r="4.5" fill="${dotColor}" stroke="#0b1329" stroke-width="2" class="chart-dot"></circle>
                         ${pt.val > 0 ? `<text x="${pt.x}" y="${pt.y - 8}" fill="#f8fafc" font-size="10.5" font-weight="700" text-anchor="middle" font-family="'JetBrains Mono', monospace">${pt.displayVal}</text>` : ''}
                         ${(count <= 14 || i % 2 === 0) ? `<text x="${pt.x}" y="${height - 10}" fill="var(--muted)" font-size="10" text-anchor="middle" font-family="'JetBrains Mono', monospace">${pt.day}</text>` : ''}
@@ -6473,6 +6830,9 @@ dialog.export-dialog::backdrop {
                 abstSecs: e.abstCount > 0 ? Math.round(e.abstSecsSum / e.abstCount) : 0,
                 agbtSecs: e.agbtCount > 0 ? Math.round(e.agbtSecsSum / e.agbtCount) : 0,
                 csat: csatEval > 0 ? Math.round((e.csatGood / csatEval) * 100) : 0,
+                csatGood: e.csatGood || 0,
+                csatBad: e.csatBad || 0,
+                csatTotal: csatEval,
                 long: e.long
             };
         });

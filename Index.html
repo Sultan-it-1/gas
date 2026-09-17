@@ -49,40 +49,20 @@
             <span data-i18n="tabStatsView">Performance Analytics & Charts</span>
             <span class="tab-badge" id="statsTabBadge">0</span>
         </button>
+        <button type="button" class="main-view-tab-btn" role="tab" id="tabWeeklyView" aria-selected="false" aria-controls="viewWeeklySection">
+            <span class="tab-icon" aria-hidden="true">📅</span>
+            <span data-i18n="tabWeeklyView">Weekly</span>
+        </button>
+        <button type="button" class="main-view-tab-btn" role="tab" id="tabMonthlyView" aria-selected="false" aria-controls="viewMonthlySection">
+            <span class="tab-icon" aria-hidden="true">🗓️</span>
+            <span data-i18n="tabMonthlyView">Monthly</span>
+        </button>
     </nav>
 
     <!-- 1. Data & Tables Workspace View -->
     <div id="viewDataSection" class="view-panel-section">
-        <section class="stats" aria-label="Sheet Summary">
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">📁</span>
-                    <span data-i18n="statSheet">Worksheet</span>
-                </div>
-                <strong id="fileCount" style="font-size: 16px;">Daily_Summary</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">👤</span>
-                    <span data-i18n="statAgents">Agents</span>
-                </div>
-                <strong id="agentCount">0</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">📊</span>
-                    <span data-i18n="statMetrics">Metrics</span>
-                </div>
-                <strong id="resultCount">7</strong>
-            </div>
-            <div class="stat-card">
-                <div class="stat-header">
-                    <span class="stat-icon">🔢</span>
-                    <span data-i18n="statRows">Recorded Rows</span>
-                </div>
-                <strong id="rowCount">0</strong>
-            </div>
-        </section>
+        <!-- شريط التبويبات الداخلية: كل الوكلاء (ثابت) + تبويب لكل وكيل مفتوح -->
+        <nav id="agentTabsBar" class="agent-tabs-bar" role="tablist" aria-label="Agent tabs"></nav>
 
         <div class="workspace" id="workspaceContainer">
             <!-- Left Side Panel: Results and Agents (Hidden in All Agents mode) -->
@@ -418,6 +398,50 @@
                 </div>
             </div>
         </div>
+    </section>
+
+    <!-- 3. Weekly View (Pivot Table) -->
+    <section id="viewWeeklySection" class="view-panel-section period-view-section" hidden aria-label="Weekly">
+        <div class="period-header">
+            <div>
+                <h2>📅 Weekly Performance</h2>
+                <p class="muted">قيم جميع الوكلاء خلال أسابيع الشهر الحالي بناءً على مقياس محدد.</p>
+            </div>
+            <div class="filter-group-inline">
+                <label for="weeklyMetricSelect">المقياس:</label>
+                <select id="weeklyMetricSelect">
+                    <option value="csat" selected>CSAT</option>
+                    <option value="abst">ABST</option>
+                    <option value="sessions">Sessions</option>
+                </select>
+            </div>
+        </div>
+        <div class="period-table-wrap">
+            <table class="period-table" id="weeklyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+        </div>
+        <p class="muted" id="weeklyEmpty" hidden>لا توجد بيانات أسبوعية بعد.</p>
+    </section>
+
+    <!-- 4. Monthly View (Pivot Table) -->
+    <section id="viewMonthlySection" class="view-panel-section period-view-section" hidden aria-label="Monthly">
+        <div class="period-header">
+            <div>
+                <h2>🗓️ Monthly Performance</h2>
+                <p class="muted">قيم جميع الوكلاء خلال آخر 6 أشهر بناءً على مقياس محدد.</p>
+            </div>
+            <div class="filter-group-inline">
+                <label for="monthlyMetricSelect">المقياس:</label>
+                <select id="monthlyMetricSelect">
+                    <option value="csat" selected>CSAT</option>
+                    <option value="abst">ABST</option>
+                    <option value="sessions">Sessions</option>
+                </select>
+            </div>
+        </div>
+        <div class="period-table-wrap">
+            <table class="period-table" id="monthlyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+        </div>
+        <p class="muted" id="monthlyEmpty" hidden>لا توجد بيانات شهرية بعد.</p>
     </section>
 
     <p class="footnote" data-i18n="footerNotice">Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.</p>
