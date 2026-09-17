@@ -21,8 +21,8 @@
             <p class="muted" id="topbarSubtitle" data-i18n="appSubtitle">Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.</p>
         </div>
         <div class="topbar-actions">
-            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="بوابة الإدارة — لصق واستيراد البيانات للشيت">
-                <span>🔑 استيراد البيانات (Admin)</span>
+            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="الإدارة — استيراد وحظر وحذف وإدارة المدراء">
+                <span>⚙️ الإدارة</span>
             </button>
             <button id="btnLangToggle" class="button lang-toggle-btn" type="button" title="Switch Language to Arabic / تغيير اللغة للعربية">
                 <span class="lang-icon">🌐</span>
@@ -533,9 +533,39 @@
                     <span>📊 فتح ملف Google Sheet</span>
                 </button>
             </div>
+            <!-- إدارة المستخدمين (حظر / حذف) -->
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                    <h3 style="font-size:14px; color:#fff; margin:0;">👥 إدارة المستخدمين (حظر / حذف)</h3>
+                    <button type="button" id="adminBtnRefreshUsers" class="admin-btn-ghost" style="padding:6px 12px; font-size:12px;">🔄 تحديث</button>
+                </div>
+                <div id="adminUsersList" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;">
+                    <p style="color:var(--muted); font-size:12px; margin:0;">اضغط "🔄 تحديث" لتحميل الوكلاء.</p>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
+<!-- مودال تأكيد الحذف النهائي -->
+<div id="adminDeleteModal" class="admin-modal-overlay" style="display:none;">
+    <div class="admin-modal-card" style="max-width:420px;">
+        <div class="admin-modal-header">
+            <h2 style="color:#fca5a5; font-size:16px; margin:0;">⚠️ تأكيد الحذف النهائي</h2>
+            <button type="button" class="admin-btn-close" id="adminBtnCancelDelete">✕</button>
+        </div>
+        <div class="admin-modal-body">
+            <p style="font-size:13px; color:var(--muted); margin:0 0 6px;">سيتم حذف <strong id="adminDeleteAgentName" style="color:#fecaca;"></strong> وجميع بياناته نهائياً. لا يمكن التراجع.</p>
+            <p style="font-size:12px; color:var(--muted); margin:0 0 10px;">للتأكيد اكتب البريد الإلكتروني للوكيل بالضبط:</p>
+            <input type="text" id="adminDeleteConfirmInput" dir="ltr" autocomplete="off" placeholder="اكتب البريد الإلكتروني هنا..." style="width:100%; padding:9px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#fff; font-size:13px; outline:none;">
+            <div class="admin-modal-actions" style="margin-top:14px;">
+                <button type="button" class="admin-btn-secondary" id="adminBtnCancelDelete2">إلغاء</button>
+                <button type="button" class="admin-btn-primary" id="adminBtnConfirmDelete" disabled style="background:#ef4444; border-color:#ef4444;">🗑️ حذف نهائي</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <script>
     window.APP_INITIAL_DATA = <?!= (typeof initialData !== 'undefined' && initialData) ? initialData : '{}' ?>;

@@ -855,8 +855,23 @@ function calculateAnalytics(records, agentFilter = null) {
 function doGet(e) {
   const page = (e && e.parameter && (e.parameter.page || e.parameter.p || '')) || '';
   const openAdmin = (page.toLowerCase() === 'admin');
+  const currentUserEmail = getCurrentUserEmail();
+  const userIsAdmin = isCurrentUserAdmin();
+  const userIsAllowed = isCurrentUserAllowed();
+
+  // تقييد الموقع كاملاً: فقط المدراء + قائمة المستخدمين المصرح لهم
+  if (!userIsAllowed) {
+    return HtmlService.createHtmlOutput(getAccessDeniedHtml())
+      .setTitle('Access Denied')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
 
   if (openAdmin) {
+    if (!userIsAdmin) {
+      return HtmlService.createHtmlOutput(getAccessDeniedHtml())
+        .setTitle('Access Denied')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
     try {
       return HtmlService.createHtmlOutputFromFile('Admin')
         .setTitle('Admin Portal — استيراد وحفظ البيانات | Google Drive DB')
@@ -871,13 +886,26 @@ function doGet(e) {
   template.initialData = JSON.stringify({
     title: "Agent Dashboard | لوحة أداء الوكلاء",
     timestamp: new Date().toISOString(),
-    openAdmin: openAdmin
+    openAdmin: openAdmin,
+    isAdmin: userIsAdmin,
+    currentUserEmail: currentUserEmail
   });
 
   return template.evaluate()
     .setTitle(openAdmin ? 'Admin Portal — استيراد وحفظ البيانات' : 'Agent Dashboard — لوحة أداء الوكلاء')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function getAccessDeniedHtml() {
+  return '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>غير مصرح لك</title></head>' +
+    '<body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0f1d;color:#f1f5f9;font-family:system-ui,sans-serif;text-align:center;">' +
+    '<div><div style="font-size:64px;">🔒</div>' +
+    '<h1 style="margin:16px 0 8px;font-size:22px;">غير مصرح لك بالوصول</h1>' +
+    '<p style="color:#94a3b8;font-size:15px;margin:0;">هذه اللوحة متاحة فقط للمستخدمين المصرح لهم.</p>' +
+    '<p style="color:#64748b;font-size:13px;">إذا كنت تعتقد أن هذا خطأ، تواصل مع الأدمن.</p></div></body></html>';
 }
 
 function doPost(e) {
@@ -2128,6 +2156,163 @@ function getAllAgentsForAdmin() {
   } catch (e) {
     return { success: false, message: e.message, agents: [], bannedAgents: [] };
   }
+}
+
+/**
+ * ============================================================================
+ * إدارة المدراء (Admin Users) — صلاحيات الوصول لصفحة الإدارة
+ * ============================================================================
+ */
+const ADMINS_FILE_NAME = "admin_emails.json";
+const PRIMARY_ADMIN_EMAIL = "sultan.alkharmani@tabby.sa";
+
+function getAdminEmailsSet() {
+  const set = new Set();
+  try {
+    const folder = getOrCreateDataFolder();
+    const files = folder.getFilesByName(ADMINS_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getBlob().getDataAsString();
+      const arr = JSON.parse(content || '[]');
+      if (Array.isArray(arr)) arr.forEach(e => { const k = String(e || '').toLowerCase().trim(); if (k) set.add(k); });
+    }
+  } catch (e) { console.warn('getAdminEmailsSet warning:', e.message); }
+  // ضمان وجود الأدمن الأساسي دائماً
+  if (!set.has(PRIMARY_ADMIN_EMAIL)) set.add(PRIMARY_ADMIN_EMAIL);
+  return set;
+}
+
+function saveAdminEmailsSet(set) {
+  const folder = getOrCreateDataFolder();
+  const content = JSON.stringify(Array.from(set));
+  const files = folder.getFilesByName(ADMINS_FILE_NAME);
+  if (files.hasNext()) files.next().setContent(content);
+  else folder.createFile(ADMINS_FILE_NAME, content, MimeType.PLAIN_TEXT);
+}
+
+function getCurrentUserEmail() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    return email || '';
+  } catch (e) { return ''; }
+}
+
+function isCurrentUserAdmin() {
+  const email = getCurrentUserEmail().toLowerCase().trim();
+  if (!email) return false;
+  return getAdminEmailsSet().has(email);
+}
+
+function getAdminsList() {
+  try {
+    const set = getAdminEmailsSet();
+    return {
+      success: true,
+      admins: Array.from(set),
+      currentUser: getCurrentUserEmail(),
+      isCurrentUserAdmin: isCurrentUserAdmin()
+    };
+  } catch (e) {
+    return { success: false, admins: [], currentUser: '', isCurrentUserAdmin: false, message: e.message };
+  }
+}
+
+function addAdminEmail(email) {
+  try {
+    if (!isCurrentUserAdmin()) return { success: false, message: 'غير مصرح لك.' };
+    const key = String(email || '').toLowerCase().trim();
+    if (!key || key.indexOf('@') === -1) return { success: false, message: 'إيميل غير صالح.' };
+    const set = getAdminEmailsSet();
+    set.add(key);
+    saveAdminEmailsSet(set);
+    return { success: true, admins: Array.from(set) };
+  } catch (e) { return { success: false, message: e.message }; }
+}
+
+function removeAdminEmail(email) {
+  try {
+    if (!isCurrentUserAdmin()) return { success: false, message: 'غير مصرح لك.' };
+    const key = String(email || '').toLowerCase().trim();
+    if (key === PRIMARY_ADMIN_EMAIL) return { success: false, message: 'لا يمكن حذف الأدمن الأساسي.' };
+    const set = getAdminEmailsSet();
+    set.delete(key);
+    saveAdminEmailsSet(set);
+    return { success: true, admins: Array.from(set) };
+  } catch (e) { return { success: false, message: e.message }; }
+}
+
+/**
+ * ============================================================================
+ * إدارة المستخدمين المصرح لهم (Allowed Users) — صلاحية عرض الموقع كاملاً
+ * ============================================================================
+ */
+const ALLOWED_FILE_NAME = "allowed_emails.json";
+
+function getAllowedEmailsSet() {
+  const set = new Set();
+  try {
+    const folder = getOrCreateDataFolder();
+    const files = folder.getFilesByName(ALLOWED_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getBlob().getDataAsString();
+      const arr = JSON.parse(content || '[]');
+      if (Array.isArray(arr)) arr.forEach(e => { const k = String(e || '').toLowerCase().trim(); if (k) set.add(k); });
+    }
+  } catch (e) { console.warn('getAllowedEmailsSet warning:', e.message); }
+  return set;
+}
+
+function saveAllowedEmailsSet(set) {
+  const folder = getOrCreateDataFolder();
+  const content = JSON.stringify(Array.from(set));
+  const files = folder.getFilesByName(ALLOWED_FILE_NAME);
+  if (files.hasNext()) files.next().setContent(content);
+  else folder.createFile(ALLOWED_FILE_NAME, content, MimeType.PLAIN_TEXT);
+}
+
+function isCurrentUserAllowed() {
+  const email = getCurrentUserEmail().toLowerCase().trim();
+  if (!email) return false;
+  if (isCurrentUserAdmin()) return true; // المدراء مسموح لهم تلقائياً
+  return getAllowedEmailsSet().has(email);
+}
+
+function getAllowedList() {
+  try {
+    const set = getAllowedEmailsSet();
+    return {
+      success: true,
+      allowed: Array.from(set),
+      currentUser: getCurrentUserEmail(),
+      isCurrentUserAdmin: isCurrentUserAdmin()
+    };
+  } catch (e) {
+    return { success: false, allowed: [], currentUser: '', isCurrentUserAdmin: false, message: e.message };
+  }
+}
+
+function addAllowedEmail(email) {
+  try {
+    if (!isCurrentUserAdmin()) return { success: false, message: 'غير مصرح لك.' };
+    const key = String(email || '').toLowerCase().trim();
+    if (!key || key.indexOf('@') === -1) return { success: false, message: 'إيميل غير صالح.' };
+    if (getAdminEmailsSet().has(key)) return { success: false, message: 'هذا الإيميل مدير بالفعل (مسموح له تلقائياً).' };
+    const set = getAllowedEmailsSet();
+    set.add(key);
+    saveAllowedEmailsSet(set);
+    return { success: true, allowed: Array.from(set) };
+  } catch (e) { return { success: false, message: e.message }; }
+}
+
+function removeAllowedEmail(email) {
+  try {
+    if (!isCurrentUserAdmin()) return { success: false, message: 'غير مصرح لك.' };
+    const key = String(email || '').toLowerCase().trim();
+    const set = getAllowedEmailsSet();
+    set.delete(key);
+    saveAllowedEmailsSet(set);
+    return { success: true, allowed: Array.from(set) };
+  } catch (e) { return { success: false, message: e.message }; }
 }
 
 function getAdminStats() {
