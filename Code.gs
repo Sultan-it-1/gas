@@ -1339,6 +1339,7 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
   }
 
   clearCachedOverview();
+  clearCachedPeriodTables();
   setCachedOverview(overviewData);
 
   // إبطال كاش الخط الزمني لكل وكيل حتى لا تبقى أرقام قديمة بعد حفظ بيانات جديدة
@@ -2074,6 +2075,7 @@ function setAgentBanned(email, banned) {
     if (banned) set.add(key); else set.delete(key);
     saveBannedAgentsSet(set);
     clearCachedOverview();
+    clearCachedPeriodTables();
     logSystemEvent(banned ? 'WARN' : 'INFO', banned ? 'Ban Agent' : 'Unban Agent',
       `تم ${banned ? 'حظر' : 'إلغاء حظر'} الوكيل (${key})`);
     return { success: true, email: key, banned: !!banned, bannedAgents: Array.from(set) };
@@ -2185,6 +2187,7 @@ function deleteAgentData(email) {
     set.delete(key);
     saveBannedAgentsSet(set);
     clearCachedOverview();
+    clearCachedPeriodTables();
     clearCachedAgentTimeline(email);
 
     logSystemEvent('WARN', 'Delete Agent Data',
@@ -2273,6 +2276,16 @@ function getAgentsPeriodTable(metric, periodType) {
     const m = (metric || 'csat').toLowerCase();
     const type = (periodType || 'weekly').toLowerCase();
 
+    // استرداد سريع من الكاش (يمنع إعادة قراءة كل ملفات Drive في كل مرة)
+    const cacheKey = 'PERIOD_TABLE_' + m + '_' + type;
+    try {
+      const cachedRaw = CacheService.getScriptCache().get(cacheKey);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && parsed.success) return parsed;
+      }
+    } catch (e) { /* تجاهل أخطاء الكاش */ }
+
     const overview = getDashboardDataFromSheet();
     const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
     const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods();
@@ -2299,7 +2312,7 @@ function getAgentsPeriodTable(metric, periodType) {
       rows.push({ email: a.email, name: a.name || a.email, values: values });
     }
 
-    return {
+    const result = {
       success: true,
       metric: m,
       periodType: type,
@@ -2307,9 +2320,28 @@ function getAgentsPeriodTable(metric, periodType) {
       periods: periods.map(p => ({ key: p.key, label: p.label, range: p.range || '' })),
       agents: rows
     };
+
+    // حفظ النتيجة في الكاش لمدة 10 دقائق للاسترداد السريع
+    try {
+      const json = JSON.stringify(result);
+      if (json.length < 90000) CacheService.getScriptCache().put(cacheKey, json, 600);
+    } catch (e) { /* تجاهل */ }
+
+    return result;
   } catch (e) {
     return { success: false, message: e.message, agents: [], periods: [] };
   }
+}
+
+function clearCachedPeriodTables() {
+  try {
+    const cache = CacheService.getScriptCache();
+    ['csat', 'abst', 'sessions'].forEach(function (m) {
+      ['weekly', 'monthly'].forEach(function (t) {
+        cache.remove('PERIOD_TABLE_' + m + '_' + t);
+      });
+    });
+  } catch (e) { /* تجاهل */ }
 }
 
 function logSystemEvent(type, action, details) {
