@@ -26,21 +26,29 @@ const CONFIG = {
  */
 function doGet(e) {
   const page = (e && e.parameter && (e.parameter.page || e.parameter.p || '')) || '';
-  if (page.toLowerCase() === 'admin') {
-    return HtmlService.createHtmlOutputFromFile('Admin')
-      .setTitle('Admin Portal — استيراد وحفظ البيانات | Agent Dashboard')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  const openAdmin = (page.toLowerCase() === 'admin');
+
+  // إذا طلب المستخدم صفحة Admin وكان ملف Admin المستقل موجوداً، يتم تخديمه
+  if (openAdmin) {
+    try {
+      return HtmlService.createHtmlOutputFromFile('Admin')
+        .setTitle('Admin Portal — استيراد وحفظ البيانات | Agent Dashboard')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    } catch (errAdmin) {
+      // إذا لم يكن ملف Admin موجوداً، نخدم الداشبورد فوراً مع فتح نافذة الإدارة المنبثقة تلقائياً
+    }
   }
 
   const template = HtmlService.createTemplateFromFile('Index');
   template.initialData = JSON.stringify({
     title: "Agent Dashboard | لوحة أداء الوكلاء",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    openAdmin: openAdmin
   });
 
   return template.evaluate()
-    .setTitle('Agent Dashboard — قراءة النتائج')
+    .setTitle(openAdmin ? 'Admin Portal — استيراد وحفظ البيانات' : 'Agent Dashboard — قراءة النتائج')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }

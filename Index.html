@@ -21,9 +21,9 @@
             <p class="muted" id="topbarSubtitle" data-i18n="appSubtitle">Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.</p>
         </div>
         <div class="topbar-actions">
-            <a href="?page=admin" class="button" id="btnAdminPortal" style="text-decoration:none;background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;" title="بوابة الإدارة — لصق واستيراد البيانات للشيت">
+            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="بوابة الإدارة — لصق واستيراد البيانات للشيت">
                 <span>🔑 استيراد البيانات (Admin)</span>
-            </a>
+            </button>
             <button id="btnLangToggle" class="button lang-toggle-btn" type="button" title="Switch Language to Arabic / تغيير اللغة للعربية">
                 <span class="lang-icon">🌐</span>
                 <span id="currentLangLabel">العربية</span>
@@ -422,6 +422,100 @@
 
     <p class="footnote" data-i18n="footerNotice">Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.</p>
 </main>
+
+<!-- ======================================================== -->
+<!-- نافذة بوابة الإدارة المنبثقة (Admin Portal Modal) -->
+<!-- ======================================================== -->
+<div id="adminModalOverlay" class="admin-modal-overlay" aria-hidden="true" style="display:none;">
+    <div class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+        <div class="admin-modal-header">
+            <div class="admin-header-title-wrap">
+                <span class="admin-header-badge">ADMIN PORTAL • بوابة الإدارة</span>
+                <h2 id="adminModalTitle">🔑 استيراد وحفظ البيانات إلى Google Sheets</h2>
+                <p class="admin-subtitle">الصق بيانات الـ JSON المنسوخة من الإضافة لحفظها وفرزها فوراً بدون مشاكل أذونات أو تكرار.</p>
+            </div>
+            <button type="button" class="admin-btn-close" id="btnCloseAdminModal" title="إغلاق النافذة">✕</button>
+        </div>
+
+        <div class="admin-modal-body">
+            <!-- Info Alert -->
+            <div class="admin-info-alert">
+                <span class="admin-info-icon">💡</span>
+                <div>
+                    <strong>طريقة الاستخدام السريعة:</strong> من إضافة المتصفح اضغط على <b>📋 نسخ بيانات JSON</b>، ثم الصق النص في المربع أدناه واضغط <b>حفظ واستيراد</b>. سيتم تحديث الشيت فوراً وبشكل تلقائي!
+                </div>
+            </div>
+
+            <!-- Input Box -->
+            <div class="admin-input-card">
+                <div class="admin-input-header">
+                    <label for="adminJsonInput"><span>📋</span> الصق كود الـ JSON هنا:</label>
+                    <div class="admin-input-actions">
+                        <label class="admin-btn-outline" style="cursor: pointer;">
+                            📁 رفع ملف JSON
+                            <input type="file" id="adminFileInput" accept=".json,application/json" style="display: none;">
+                        </label>
+                        <button type="button" class="admin-btn-ghost" id="adminBtnClear">مسح النص</button>
+                    </div>
+                </div>
+                <textarea id="adminJsonInput" class="admin-textarea" placeholder='{"agents": [...], "results": [...]} أو الصق محتوى ملف JSON هنا مباشرة...'></textarea>
+            </div>
+
+            <!-- Live Preview Grid -->
+            <div class="admin-preview-grid">
+                <div class="admin-prev-card">
+                    <span class="admin-prev-label">إجمالي الوكلاء</span>
+                    <strong class="admin-prev-value" id="adminPrevAgents">0</strong>
+                </div>
+                <div class="admin-prev-card">
+                    <span class="admin-prev-label">مقاييس التفاصيل (Drills)</span>
+                    <strong class="admin-prev-value" id="adminPrevDrills">0</strong>
+                </div>
+                <div class="admin-prev-card">
+                    <span class="admin-prev-label">التذاكر بالأرشيف</span>
+                    <strong class="admin-prev-value" id="adminPrevTickets">0</strong>
+                </div>
+                <div class="admin-prev-card">
+                    <span class="admin-prev-label">حالة الفحص</span>
+                    <strong class="admin-prev-status" id="adminPrevStatus">في انتظار اللصق</strong>
+                </div>
+            </div>
+
+            <!-- Options -->
+            <div class="admin-options-card">
+                <label class="admin-checkbox-label">
+                    <input type="checkbox" id="adminChkSmartDates" checked>
+                    <span>تطبيق الفرز الذكي والتواريخ التلقائية لتفادي التكرار</span>
+                </label>
+                <label class="admin-checkbox-label">
+                    <input type="checkbox" id="adminChkUpdateSummary" checked>
+                    <span>تحديث جدول ملخص اليوم (Daily_Summary)</span>
+                </label>
+                <label class="admin-checkbox-label">
+                    <input type="checkbox" id="adminChkUpdateArchive" checked>
+                    <span>ترحيل وتحديث الأرشيف التاريخي والتفصيلي (Historical & Drills)</span>
+                </label>
+            </div>
+
+            <!-- Status Feedback Box -->
+            <div id="adminStatusBox" class="admin-status-box" style="display:none;"></div>
+
+            <!-- Actions -->
+            <div class="admin-modal-actions">
+                <button type="button" id="adminBtnSave" class="admin-btn-primary">
+                    <span>🚀 حفظ واستيراد إلى Google Sheets</span>
+                </button>
+                <button type="button" id="adminBtnOpenSheet" class="admin-btn-secondary">
+                    <span>📊 فتح ملف Google Sheet</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.APP_INITIAL_DATA = <?!= (typeof initialData !== 'undefined' && initialData) ? initialData : '{}' ?>;
+</script>
 
 <!-- تضمين كود الجافاسكربت الخاص بالواجهة في Google Apps Script -->
 <?!= include('Scripts'); ?>
