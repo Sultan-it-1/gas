@@ -66,67 +66,69 @@ function findColIndex(headers, ...candidates) {
   return -1;
 }
 
-function extractRowDate(row, header) {
+function extractRowTimestamp(row, header) {
   if (!row || !header) return null;
   const h = header.map(c => String(c).toLowerCase().trim());
-  const priorityNames = [
-    'day',
-    'report_dt',
-    'ticket_creation_date',
-    'date_resolved_dubai',
-    'created_at_dubai',
-    'csat_submitted_at_dubai',
-    'shift_date',
-    'plan_shift_start',
-    'fact_shift_start',
-    'call_start_date',
-    'date'
-  ];
+  const priorityNames = ['day','report_dt','ticket_creation_date','date_resolved_dubai','created_at_dubai','csat_submitted_at_dubai','shift_date','plan_shift_start','fact_shift_start','call_start_date','date'];
   for (const name of priorityNames) {
     const idx = h.findIndex(c => c === name || c.includes(name));
     if (idx !== -1 && row[idx]) {
-      const str = String(row[idx]).trim();
-      const m = str.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
-      if (m) {
-        const yy = parseInt(m[1], 10);
-        const mm = parseInt(m[2], 10);
-        const dd = parseInt(m[3], 10);
-        if (yy > 2000 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-          return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-        }
-      }
-      const dmy = str.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
-      if (dmy) {
-        const d1 = parseInt(dmy[1], 10);
-        const d2 = parseInt(dmy[2], 10);
-        const y = parseInt(dmy[3], 10);
-        if (d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 12 && y > 2000) {
-          return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-        }
-      }
-      const dt = new Date(str);
-      if (!isNaN(dt.getTime()) && dt.getFullYear() > 2000) {
-        return dt.toISOString().slice(0, 10);
-      }
+      const ts = parseTimestampValue(String(row[idx]));
+      if (ts) return ts;
     }
   }
   for (let idx = 0; idx < h.length; idx++) {
     const col = h[idx];
     if (col.includes('date') || col.includes('day') || col.includes('dt') || col.includes('time') || col.includes('start') || col.endsWith('_at')) {
-      const str = String(row[idx] || '').trim();
-      if (!str) continue;
-      const m = str.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
-      if (m) {
-        const yy = parseInt(m[1], 10);
-        const mm = parseInt(m[2], 10);
-        const dd = parseInt(m[3], 10);
-        if (yy > 2000 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-          return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-        }
-      }
+      const ts = parseTimestampValue(String(row[idx] || ''));
+      if (ts) return ts;
     }
   }
   return null;
+}
+
+function parseTimestampValue(str) {
+  const s = String(str || '').trim();
+  if (!s) return null;
+  const dt = s.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+  if (dt) {
+    const y = +dt[1], mo = +dt[2], d = +dt[3], hh = +dt[4], mi = +dt[5], ss = +(dt[6] || 0);
+    if (y > 2000 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && hh >= 0 && hh <= 23 && mi >= 0 && mi <= 59) {
+      return dt[1] + '-' + dt[2].padStart(2, '0') + '-' + dt[3].padStart(2, '0') + ' ' + String(hh).padStart(2, '0') + ':' + String(mi).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+    }
+  }
+  const dOnly = s.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (dOnly) {
+    const y = +dOnly[1], mo = +dOnly[2], d = +dOnly[3];
+    if (y > 2000 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return dOnly[1] + '-' + dOnly[2].padStart(2, '0') + '-' + dOnly[3].padStart(2, '0') + ' 00:00:00';
+    }
+  }
+  const dmy = s.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+  if (dmy) {
+    const d1 = +dmy[1], d2 = +dmy[2], y = +dmy[3];
+    if (d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 12 && y > 2000) {
+      return dmy[3] + '-' + dmy[2].padStart(2, '0') + '-' + dmy[1].padStart(2, '0') + ' 00:00:00';
+    }
+  }
+  const fb = new Date(s);
+  if (!isNaN(fb.getTime()) && fb.getFullYear() > 2000) {
+    return fb.getFullYear() + '-' + String(fb.getMonth() + 1).padStart(2, '0') + '-' + String(fb.getDate()).padStart(2, '0') + ' ' + String(fb.getHours()).padStart(2, '0') + ':' + String(fb.getMinutes()).padStart(2, '0') + ':00';
+  }
+  return null;
+}
+
+function shiftDayFromTimestamp(ts, cutoffHour) {
+  const parts = String(ts).split(/[- :]/);
+  const dt = new Date(+parts[0], +parts[1] - 1, +parts[2], +parts[3], +parts[4], +(parts[5] || 0));
+  dt.setHours(dt.getHours() - cutoffHour);
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+}
+
+const SHIFT_TOTAL_OFFSET_HOURS = 8; // 1 ساعة فرق توقيت دبي→السعودية + 7 ساعات حد الشفت 07:00
+function extractRowDate(row, header) {
+  const ts = extractRowTimestamp(row, header);
+  return ts ? ts.slice(0, 10) : null;
 }
 
 /**
@@ -476,7 +478,7 @@ function filterRecordsToCurrentMonth(records) {
   }).filter(rec => (rec.rows || []).length > 0);
 }
 
-function calculateAnalytics(records, agentFilter = null) {
+function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0) {
   if (!Array.isArray(records) || !records.length) {
     return {
       totalRecords: 0,
@@ -747,8 +749,9 @@ function calculateAnalytics(records, agentFilter = null) {
     const csatScoreIdx = h.findIndex(c => c === 'csat_adjusted' || c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
 
     for (const row of r.rows || []) {
-      const day = extractRowDate(row, r.header);
-      if (!day) continue;
+      const ts = extractRowTimestamp(row, r.header);
+      if (!ts) continue;
+      const day = (shiftCutoffHour > 0) ? shiftDayFromTimestamp(ts, shiftCutoffHour) : ts.slice(0, 10);
       const entry = getDayEntry(day);
 
       if (metric === 'abst') {
@@ -1771,9 +1774,10 @@ function getAgentDrillRowsFromSheet(email, metric) {
  * يعتمد على ملفات drills الخاصة بهذا الوكيل حصرياً.
  * يتم تخزين النتيجة في كاش سريع لأن الحساب يقرأ كل صفوف الوكيل (قد تكون آلافاً).
  */
-function getCachedAgentTimeline(email) {
+function getCachedAgentTimeline(email, byShift) {
   try {
-    const raw = CacheService.getScriptCache().get('AGT_' + email);
+    const key = 'AGT_' + email + (byShift ? '_shift' : '');
+    const raw = CacheService.getScriptCache().get(key);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.warn('Agent timeline cache read warning:', e);
@@ -1781,11 +1785,12 @@ function getCachedAgentTimeline(email) {
   return null;
 }
 
-function setCachedAgentTimeline(email, obj) {
+function setCachedAgentTimeline(email, obj, byShift) {
   try {
     const s = JSON.stringify(obj);
     if (s.length < 90000) {
-      CacheService.getScriptCache().put('AGT_' + email, s, 21600); // 6 ساعات
+      const key = 'AGT_' + email + (byShift ? '_shift' : '');
+      CacheService.getScriptCache().put(key, s, 21600); // 6 ساعات
     }
   } catch (e) {
     console.warn('Agent timeline cache write warning:', e);
@@ -1795,10 +1800,11 @@ function setCachedAgentTimeline(email, obj) {
 function clearCachedAgentTimeline(email) {
   try {
     CacheService.getScriptCache().remove('AGT_' + email);
+    CacheService.getScriptCache().remove('AGT_' + email + '_shift');
   } catch (e) {}
 }
 
-function getAgentDailyTimeline(email) {
+function getAgentDailyTimeline(email, byShift) {
   try {
     if (!email) {
       return { success: false, email: email, days: [] };
@@ -1810,7 +1816,7 @@ function getAgentDailyTimeline(email) {
     }
 
     // 1. كاش سريع أولاً
-    const cached = getCachedAgentTimeline(email);
+    const cached = getCachedAgentTimeline(email, byShift);
     if (cached) {
       return { success: true, email: email, days: cached };
     }
@@ -1839,9 +1845,10 @@ function getAgentDailyTimeline(email) {
     }
 
     // بما أن الملفات مفصولة لكل وكيل، فلا حاجة لفلترة إضافية تعتمد على تطابق حالة الأحرف
-    const analytics = calculateAnalytics(records);
+    const cutoff = byShift ? SHIFT_TOTAL_OFFSET_HOURS : 0;
+    const analytics = calculateAnalytics(records, null, cutoff);
     const days = Array.isArray(analytics.timeline) ? analytics.timeline : [];
-    setCachedAgentTimeline(email, days);
+    setCachedAgentTimeline(email, days, byShift);
 
     return {
       success: true,

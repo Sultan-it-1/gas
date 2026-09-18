@@ -2161,6 +2161,7 @@ dialog.export-dialog::backdrop {
 .period-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
     font-size: 12px;
     line-height: 1.3;
 }
@@ -2195,9 +2196,7 @@ dialog.export-dialog::backdrop {
 }
 
 .period-table .period-agent-col {
-    width: 170px;
-    min-width: 120px;
-    max-width: 220px;
+    width: 160px;
     text-align: left;
     direction: ltr;
     font-weight: 700;
@@ -3615,6 +3614,10 @@ dialog.export-dialog::backdrop {
                         </div>
                     </div>
                     <div class="chart-toolbar-actions" style="display:flex; align-items:center; gap:10px;">
+                        <label class="chart-shift-toggle" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--muted); white-space:nowrap;">
+                            <input type="checkbox" id="chartByShiftToggle" style="cursor:pointer;">
+                            <span data-i18n="chartByShift">By Shift</span>
+                        </label>
                         <div class="chart-mode-toggle" role="group" aria-label="Chart Display Mode">
                             <button type="button" class="chart-mode-btn" id="btnChartModeBar" data-chart-mode="bar" title="Bar Chart">
                                 <span>📊</span> <span data-i18n="chartModeBar">Bars</span>
@@ -4090,6 +4093,7 @@ dialog.export-dialog::backdrop {
                 chartRangeWeek: 'This Week',
                 chartRangeMonth: 'This Month',
                 chartRangeCustom: 'Custom from Calendar 📆',
+                chartByShift: 'By Shift',
                 chartFrom: 'From:',
                 chartTo: 'To:',
                 chartApply: 'Apply',
@@ -4376,6 +4380,7 @@ dialog.export-dialog::backdrop {
                 chartRangeWeek: 'هذا الأسبوع',
                 chartRangeMonth: 'هذا الشهر',
                 chartRangeCustom: 'تحديد من التقويم 📆',
+                chartByShift: 'حسب الشفت',
                 chartFrom: 'من:',
                 chartTo: 'إلى:',
                 chartApply: 'تطبيق',
@@ -4563,6 +4568,7 @@ dialog.export-dialog::backdrop {
         chartDatePreset: 'all',
         chartStartDate: '',
         chartEndDate: '',
+        chartByShift: false,
         selectedAgent: '', // '' = All Agents
         selectedMetric: 'all',
         agentTabs: [],          // تبويبات الوكلاء المفتوحة داخلياً { email, name }
@@ -4846,6 +4852,20 @@ dialog.export-dialog::backdrop {
             endInput.addEventListener('change', () => {
                 AppState.chartEndDate = endInput.value;
                 renderSvgChart();
+            });
+        }
+
+        // زر حساب حسب الشفت (يفعل فقط مع وكيل واحد محدد)
+        const shiftToggle = el('chartByShiftToggle');
+        if (shiftToggle) {
+            shiftToggle.addEventListener('change', () => {
+                AppState.chartByShift = shiftToggle.checked;
+                const email = currentActiveEmail();
+                if (email) {
+                    loadSingleAgentAnalytics(email);
+                } else {
+                    renderAnalyticsQuickStripAndChart();
+                }
             });
         }
     }
@@ -6802,10 +6822,9 @@ dialog.export-dialog::backdrop {
             const agbtSecs = parseTimeToSeconds(agbtStr);
             if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtSecs / 600) * 100)}%`;
 
-            const idleStr = agent.idle || "0";
-            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = `${idleStr}`;
-            const idleMins = parseMinutesFromString(idleStr);
-            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleMins / 120) * 100)}%`;
+            const idleHours = parseFloat(String(agent.idle || '')) || 0;
+            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = idleHours > 0 ? `${idleHours.toFixed(2)}h` : '0h';
+            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleHours / 2) * 100)}%`;
         } else {
             // ========================================================
             // 2. عرض إجماليات ومتوسطات الفريق بالكامل
@@ -6846,17 +6865,17 @@ dialog.export-dialog::backdrop {
             if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtAvgSecs / 600) * 100)}%`;
 
             // Idle الفعلي: متوسط كل الوكلاء
-            let idleMinsSum = 0, idleCount = 0;
+            let idleHoursSum = 0, idleCount = 0;
             AppState.agents.forEach(a => {
-                const mins = parseMinutesFromString(a.idle);
-                if (mins > 0) {
-                    idleMinsSum += mins;
+                const h = parseFloat(String(a.idle || '')) || 0;
+                if (h > 0) {
+                    idleHoursSum += h;
                     idleCount++;
                 }
             });
-            const idleAvgMins = idleCount > 0 ? Math.round(idleMinsSum / idleCount) : 0;
-            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = idleCount > 0 ? `${idleAvgMins}m` : "0m";
-            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleAvgMins / 120) * 100)}%`;
+            const idleAvgHours = idleCount > 0 ? (idleHoursSum / idleCount) : 0;
+            if (el('kpiIdleVal')) el('kpiIdleVal').textContent = idleCount > 0 ? `${idleAvgHours.toFixed(2)}h` : "0h";
+            if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleAvgHours / 2) * 100)}%`;
         }
 
         // 3 & 4. الشريط الثانوي ورسم المخطط البياني التفاعلي
@@ -6971,7 +6990,7 @@ dialog.export-dialog::backdrop {
                     AppState.chartDays = [];
                     renderAnalyticsQuickStripAndChart();
                 })
-                .getAgentDailyTimeline(email);
+                .getAgentDailyTimeline(email, AppState.chartByShift);
         } else {
             // وضع المعاينة المحلي: نحسب الأيام الحقيقية لهذا الوكيل من البيانات المحفوظة (بدون اختلاق بيانات)
             AppState.analyticsLoading = false;
