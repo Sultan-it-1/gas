@@ -875,7 +875,7 @@ function doGet(e) {
 
   const template = HtmlService.createTemplateFromFile('Index');
   template.initialData = JSON.stringify({
-    title: "Agent Dashboard | لوحة أداء الوكلاء",
+    title: "Agent Dashboard",
     timestamp: new Date().toISOString(),
     openAdmin: openAdmin,
     isAdmin: userIsAdmin,
@@ -883,20 +883,20 @@ function doGet(e) {
   });
 
   return template.evaluate()
-    .setTitle(openAdmin ? 'Admin Portal — استيراد وحفظ البيانات' : 'Agent Dashboard — لوحة أداء الوكلاء')
+    .setTitle(openAdmin ? 'Admin Portal — Import & Save Data' : 'Agent Dashboard — Results & Performance')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function getAccessDeniedHtml() {
-  return '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">' +
+  return '<!DOCTYPE html><html dir="ltr" lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>غير مصرح لك</title></head>' +
+    '<title>Access Denied</title></head>' +
     '<body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0f1d;color:#f1f5f9;font-family:system-ui,sans-serif;text-align:center;">' +
     '<div><div style="font-size:64px;">🔒</div>' +
-    '<h1 style="margin:16px 0 8px;font-size:22px;">غير مصرح لك بالوصول</h1>' +
-    '<p style="color:#94a3b8;font-size:15px;margin:0;">هذه اللوحة متاحة فقط للمستخدمين المصرح لهم.</p>' +
-    '<p style="color:#64748b;font-size:13px;">إذا كنت تعتقد أن هذا خطأ، تواصل مع الأدمن.</p></div></body></html>';
+    '<h1 style="margin:16px 0 8px;font-size:22px;">Access Denied</h1>' +
+    '<p style="color:#94a3b8;font-size:15px;margin:0;">This dashboard is available only to authorized users.</p>' +
+    '<p style="color:#64748b;font-size:13px;">If you believe this is a mistake, contact your admin.</p></div></body></html>';
 }
 
 function doPost(e) {
@@ -1359,6 +1359,7 @@ function savePayloadToMicroPartitionedDrive(payload, rebuildSummary) {
 
   clearCachedOverview();
   clearCachedPeriodTables();
+  clearTicketSessionsIndex();
   setCachedOverview(overviewData);
 
   // إبطال كاش الخط الزمني لكل وكيل حتى لا تبقى أرقام قديمة بعد حفظ بيانات جديدة
@@ -2518,6 +2519,201 @@ function clearCachedPeriodTables() {
       });
     });
   } catch (e) { /* تجاهل */ }
+}
+
+// ============================================================================
+// AGBT Contribution Attribution (تحليل مساهمة الوكيل في وقت التكت)
+// ============================================================================
+
+const TICKET_SESSIONS_INDEX_FILE = "ticket_sessions_index.json";
+
+function findTicketIdCol(header) {
+  return findColIndex(header, 'ticket_id', 'ticket id', 'session_id', 'session id', 'ticket_number', 'ticket number', 'ticket');
+}
+
+function findSessionMinsCol(header) {
+  return findColIndex(header, 'basket_session_time_min', 'basket_session_time', 'session_time_min', 'session_time', 'abst', 'time');
+}
+
+function buildTicketSessionsIndex() {
+  const drillsFolder = getOrCreateDrillsFolder();
+  const files = drillsFolder.getFiles();
+  const index = {};
+
+  while (files.hasNext()) {
+    const f = files.next();
+    const name = f.getName();
+    if (!name || name.indexOf('.json') === -1 || name.indexOf('_abst') === -1) continue;
+    try {
+      const content = f.getBlob().getDataAsString();
+      if (!content || !content.trim()) continue;
+      const rec = JSON.parse(content);
+      if (!rec || !Array.isArray(rec.rows)) continue;
+      const email = String(rec.agent || '').trim();
+      if (!email) continue;
+      const header = Array.isArray(rec.header) ? rec.header : [];
+      const ticketCol = findTicketIdCol(header);
+      const minsCol = findSessionMinsCol(header);
+      if (ticketCol === -1 || minsCol === -1) continue;
+
+      for (const row of rec.rows) {
+        if (!Array.isArray(row)) continue;
+        const ticketId = String(row[ticketCol] || '').trim();
+        const mins = parseFloat(row[minsCol]);
+        if (!ticketId || isNaN(mins)) continue;
+        const eKey = email.toLowerCase();
+        if (!index[ticketId]) index[ticketId] = {};
+        if (!index[ticketId][eKey]) index[ticketId][eKey] = { email: email, mins: 0 };
+        index[ticketId][eKey].mins += mins;
+      }
+    } catch (e) { /* تجاهل الملفات التالفة */ }
+  }
+  return index;
+}
+
+function getTicketSessionsIndex(forceRebuild) {
+  const folder = getOrCreateDataFolder();
+  const existing = folder.getFilesByName(TICKET_SESSIONS_INDEX_FILE);
+  let targetFile = existing.hasNext() ? existing.next() : null;
+
+  if (!forceRebuild && targetFile) {
+    const ageMs = new Date().getTime() - targetFile.getLastUpdated().getTime();
+    if (ageMs < 30 * 60 * 1000) {
+      try {
+        const content = targetFile.getBlob().getDataAsString();
+        if (content && content.trim()) return JSON.parse(content);
+      } catch (e) { /* إعادة البناء */ }
+    }
+  }
+
+  const index = buildTicketSessionsIndex();
+  try {
+    const json = JSON.stringify(index);
+    if (json.length < 5 * 1024 * 1024) {
+      if (targetFile) targetFile.setContent(json, MimeType.PLAIN_TEXT);
+      else folder.createFile(TICKET_SESSIONS_INDEX_FILE, json, MimeType.PLAIN_TEXT);
+    }
+  } catch (e) { /* تجاهل أخطاء الكاش */ }
+
+  return index;
+}
+
+function clearTicketSessionsIndex() {
+  try {
+    const folder = getOrCreateDataFolder();
+    const files = folder.getFilesByName(TICKET_SESSIONS_INDEX_FILE);
+    while (files.hasNext()) files.next().setTrashed(true);
+  } catch (e) { /* تجاهل */ }
+}
+
+function getAgentsNameMap() {
+  const map = {};
+  try {
+    const overview = getOverviewData();
+    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
+    for (const a of agents) {
+      const email = String(a.email || a.agent || '').trim();
+      if (email) map[email.toLowerCase()] = String(a.name || '').trim() || email.split('@')[0];
+    }
+  } catch (e) { /* تجاهل */ }
+  return map;
+}
+
+function getAgbtTicketAttribution(email, ticketIds) {
+  try {
+    const agentEmail = String(email || '').trim();
+    const ids = Array.isArray(ticketIds) ? ticketIds.map(String) : [];
+    if (!agentEmail || ids.length === 0) {
+      return { success: true, email: agentEmail, items: [] };
+    }
+
+    const index = getTicketSessionsIndex(false);
+    const aKey = agentEmail.toLowerCase();
+    const items = [];
+
+    for (const rawId of ids) {
+      const tid = rawId.trim();
+      const entry = index[tid];
+      if (!entry) {
+        items.push({ ticketId: tid, totalMins: 0, agentMins: 0, agentPct: null, isMainCause: false, contributorCount: 0 });
+        continue;
+      }
+
+      let totalMins = 0, topMins = 0, topEmail = '', agentMins = 0, contributors = 0;
+      for (const eKey in entry) {
+        const m = entry[eKey].mins;
+        if (!(m > 0)) continue;
+        totalMins += m;
+        contributors++;
+        if (m > topMins) { topMins = m; topEmail = entry[eKey].email; }
+        if (eKey === aKey) agentMins = m;
+      }
+
+      totalMins = Math.round(totalMins * 100) / 100;
+      agentMins = Math.round(agentMins * 100) / 100;
+      const agentPct = totalMins > 0 ? Math.round((agentMins / totalMins) * 1000) / 10 : null;
+
+      items.push({
+        ticketId: tid,
+        totalMins: totalMins,
+        agentMins: agentMins,
+        agentPct: agentPct,
+        isMainCause: agentMins > 0 && topEmail.toLowerCase() === aKey,
+        contributorCount: contributors
+      });
+    }
+
+    return { success: true, email: agentEmail, items: items };
+  } catch (e) {
+    return { success: false, email: String(email || ''), items: [], message: String(e && e.message ? e.message : e) };
+  }
+}
+
+function getAgbtTicketDetails(ticketId) {
+  try {
+    const tid = String(ticketId || '').trim();
+    if (!tid) return { success: false, ticketId: tid, agents: [], message: 'No ticket id' };
+
+    const index = getTicketSessionsIndex(false);
+    const entry = index[tid];
+    const nameMap = getAgentsNameMap();
+    const agents = [];
+
+    if (entry) {
+      let totalMins = 0, topMins = 0;
+      for (const eKey in entry) {
+        const m = entry[eKey].mins;
+        if (!(m > 0)) continue;
+        totalMins += m;
+        if (m > topMins) topMins = m;
+      }
+      totalMins = Math.round(totalMins * 100) / 100;
+
+      for (const eKey in entry) {
+        const m = entry[eKey].mins;
+        if (!(m > 0)) continue;
+        const aEmail = entry[eKey].email;
+        agents.push({
+          email: aEmail,
+          name: nameMap[aEmail.toLowerCase()] || aEmail.split('@')[0],
+          mins: Math.round(m * 100) / 100,
+          pct: totalMins > 0 ? Math.round((m / totalMins) * 1000) / 10 : null,
+          isMainCause: m === topMins
+        });
+      }
+      agents.sort(function (a, b) { return b.mins - a.mins; });
+    }
+
+    return {
+      success: true,
+      ticketId: tid,
+      totalMins: Math.round(agents.reduce(function (s, a) { return s + a.mins; }, 0) * 100) / 100,
+      contributorCount: agents.length,
+      agents: agents
+    };
+  } catch (e) {
+    return { success: false, ticketId: String(ticketId || ''), agents: [], message: String(e && e.message ? e.message : e) };
+  }
 }
 
 function logSystemEvent(type, action, details) {

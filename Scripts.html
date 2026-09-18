@@ -231,6 +231,93 @@
                 // Footer
                 footerNotice: 'Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.',
                 
+                // Weekly / Monthly Period Tables
+                tabWeeklyView: 'Weekly',
+                tabMonthlyView: 'Monthly',
+                periodWeeklySubtitle: 'All agents values across weeks of the current month based on a selected metric.',
+                periodMonthlySubtitle: 'All agents values across the last 6 months based on a selected metric.',
+                periodMetricLabel: 'Metric:',
+                periodLoading: '⏳ Loading...',
+                periodLoadingTable: '⏳ Loading table...',
+                periodPublishedOnly: 'This table is available in the published version on Google Apps Script.',
+                periodAgentCol: 'Agent',
+                periodWeeklyEmpty: 'No weekly data yet.',
+                periodMonthlyEmpty: 'No monthly data yet.',
+
+                // Admin Portal
+                adminPortalBtn: '⚙️ Admin',
+                adminPortalBtnTitle: 'Admin — import, block, delete and manage admins',
+                adminPortalBadge: 'ADMIN PORTAL',
+                adminModalTitle: '🔑 Import & Save Data to Google Sheets',
+                adminSubtitle: 'Paste the JSON data copied from the extension to save and sort it instantly without permission or duplication issues.',
+                adminQuickHowToTitle: 'Quick guide:',
+                adminQuickHowToBody: 'from the browser extension press 📋 Copy JSON Data, then paste the text in the box below and press Save & Import. The sheet will be updated instantly and automatically!',
+                adminPasteLabel: '📋 Paste JSON code here:',
+                adminUploadFile: '📁 Upload JSON File',
+                adminClearText: 'Clear Text',
+                adminTextareaPlaceholder: '{"agents": [...], "results": [...]} or paste JSON file content here directly...',
+                adminPrevAgents: 'Total Agents',
+                adminPrevDrills: 'Drill Metrics',
+                adminPrevTickets: 'Archived Tickets',
+                adminPrevStatusLabel: 'Scan Status',
+                adminPrevStatusWaiting: 'Waiting for paste',
+                adminChkSmartDates: 'Apply smart sorting and automatic dates to avoid duplication',
+                adminChkUpdateSummary: 'Update daily summary table (Daily_Summary)',
+                adminChkUpdateArchive: 'Migrate and update historical and detailed archive (Historical & Drills)',
+                adminBtnSave: '🚀 Save & Import to Google Sheets',
+                adminBtnOpenSheet: '📊 Open Google Sheet File',
+                adminUserManagementTitle: '👥 User Management (Block / Delete)',
+                adminRefreshUsers: '🔄 Refresh',
+                adminPressRefresh: 'Press "🔄 Refresh" to load agents.',
+                adminQuickStatsTitle: '📊 Quick Stats',
+                adminStatAgents: '👥 Agents',
+                adminStatMetrics: '📊 Metrics',
+                adminStatTickets: '🔢 Tickets',
+                adminAdminsTitle: '👑 Admins Management',
+                adminAdminsOnly: 'Only admins can open this admin window.',
+                adminLoading: '⏳ Loading...',
+                adminNewAdminPlaceholder: 'New admin email...',
+                adminAdd: '➕ Add',
+                adminAccessTitle: '👥 Allowed Users Management (Access)',
+                adminAccessOnly: 'Only these can open the site. Admins are allowed automatically.',
+                adminNewAllowedPlaceholder: 'New user email...',
+
+                adminDeleteConfirmTitle: '⚠️ Confirm Permanent Deletion',
+                adminDeleteMsgPrefix: 'Will permanently delete',
+                adminDeleteMsgSuffix: 'and all their data. This cannot be undone.',
+                adminDeleteConfirmHint: 'To confirm, type the agent email exactly:',
+                adminDeleteConfirmPlaceholder: 'Type the email here...',
+                adminCancel: 'Cancel',
+                adminDeleteConfirmBtn: '🗑️ Delete Permanently',
+                adminClose: 'Close window',
+                adminUserMgmtPublishedOnly: 'User management is available in the published version.',
+                adminNoAgents: 'No agents yet.',
+                adminNoAdmins: 'No admins.',
+                adminNoAllowed: 'No allowed users yet.',
+                adminBannedSuffix: '(Banned)',
+                adminUnban: '✅ Unban',
+                adminBan: '🚫 Ban',
+                adminDelete: '🗑️ Delete',
+                adminYou: 'You',
+                adminPrimary: 'Primary',
+                adminRemove: 'Remove',
+                adminEnterEmailFirst: '⚠️ Enter an email first.',
+                adminAdded: '✅ Added.',
+                adminRemoved: '✅ Removed.',
+                adminFailed: 'Failed.',
+                adminPreviewValid: 'Valid format ready ✓',
+                adminPreviewInvalid: 'Invalid JSON structure ❌',
+                adminNeedPaste: '⚠️ Please paste the JSON code first in the box above.',
+                adminInvalidJson: '⚠️ The pasted text is not valid JSON. Please re-copy the results from the extension.',
+                adminSaving: '⏳ Sorting and saving data to Google Sheets...\nPlease wait a few seconds...',
+                adminSaveSuccess: '🎉 Saved and updated in Google Sheet successfully!\n\n• Updated data: ({agents}) agents.\n• Checked and saved: ({drills}) drill metrics.\n• Total archived tickets: ({tickets}) tickets.\n• Duplication status: duplicates excluded successfully ✓\n\nUpdating dashboard numbers automatically...',
+                adminSaveFail: 'Could not save data to Google Sheet.',
+                adminSaveError: '❌ An error occurred while saving to the sheet: ',
+                adminOpenSheetHint: 'Please open Google Sheet from your Google account.',
+                adminOpenSheetPublishedHint: 'In the published script, this button will take you to the Google Sheet file directly.',
+                adminLocalSaveSuccess: '🎉 Saved and secured your data locally!\n• Updated and saved: ({agents}) agents.\n• Total rows: ({rows}) rows.\nData is secured in the browser and will not disappear when you exit and return.',
+                adminLocalSaveError: '❌ Could not parse or save data locally: ',
+
                 // Switch button
                 langSwitchBtn: 'العربية',
                 langSwitchTitle: 'تغيير اللغة إلى العربية'
@@ -425,6 +512,92 @@
                 // Footer
                 footerNotice: 'تُسحب البيانات حصرياً من Google Sheets وتُغذى من إضافة المتصفح دون تكرار. تُحفظ السجلات في ورقة Historical_Archive و Drill_Archive.',
                 
+                // Weekly / Monthly Period Tables
+                tabWeeklyView: 'أسبوعي',
+                tabMonthlyView: 'شهري',
+                periodWeeklySubtitle: 'قيم جميع الوكلاء خلال أسابيع الشهر الحالي بناءً على مقياس محدد.',
+                periodMonthlySubtitle: 'قيم جميع الوكلاء خلال آخر 6 أشهر بناءً على مقياس محدد.',
+                periodMetricLabel: 'المقياس:',
+                periodLoading: '⏳ جاري التحميل...',
+                periodLoadingTable: '⏳ جاري تحميل الجدول...',
+                periodPublishedOnly: 'هذا الجدول متاح في النسخة المنشورة على Google Apps Script.',
+                periodAgentCol: 'الوكيل',
+                periodWeeklyEmpty: 'لا توجد بيانات أسبوعية بعد.',
+                periodMonthlyEmpty: 'لا توجد بيانات شهرية بعد.',
+
+                // Admin Portal
+                adminPortalBtn: '⚙️ الإدارة',
+                adminPortalBtnTitle: 'الإدارة — استيراد وحظر وحذف وإدارة المدراء',
+                adminPortalBadge: 'بوابة الإدارة',
+                adminModalTitle: '🔑 استيراد وحفظ البيانات إلى Google Sheets',
+                adminSubtitle: 'الصق بيانات الـ JSON المنسوخة من الإضافة لحفظها وفرزها فوراً بدون مشاكل أذونات أو تكرار.',
+                adminQuickHowToTitle: 'طريقة الاستخدام السريعة:',
+                adminQuickHowToBody: 'من إضافة المتصفح اضغط على 📋 نسخ بيانات JSON، ثم الصق النص في المربع أدناه واضغط حفظ واستيراد. سيتم تحديث الشيت فوراً وبشكل تلقائي!',
+                adminPasteLabel: '📋 الصق كود الـ JSON هنا:',
+                adminUploadFile: '📁 رفع ملف JSON',
+                adminClearText: 'مسح النص',
+                adminTextareaPlaceholder: '{"agents": [...], "results": [...]} أو الصق محتوى ملف JSON هنا مباشرة...',
+                adminPrevAgents: 'إجمالي الوكلاء',
+                adminPrevDrills: 'مقاييس التفاصيل (Drills)',
+                adminPrevTickets: 'التذاكر بالأرشيف',
+                adminPrevStatusLabel: 'حالة الفحص',
+                adminPrevStatusWaiting: 'في انتظار اللصق',
+                adminChkSmartDates: 'تطبيق الفرز الذكي والتواريخ التلقائية لتفادي التكرار',
+                adminChkUpdateSummary: 'تحديث جدول ملخص اليوم (Daily_Summary)',
+                adminChkUpdateArchive: 'ترحيل وتحديث الأرشيف التاريخي والتفصيلي (Historical & Drills)',
+                adminBtnSave: '🚀 حفظ واستيراد إلى Google Sheets',
+                adminBtnOpenSheet: '📊 فتح ملف Google Sheet',
+                adminUserManagementTitle: '👥 إدارة المستخدمين (حظر / حذف)',
+                adminRefreshUsers: '🔄 تحديث',
+                adminPressRefresh: 'اضغط "🔄 تحديث" لتحميل الوكلاء.',
+                adminQuickStatsTitle: '📊 إحصائيات سريعة',
+                adminStatAgents: '👥 الوكلاء',
+                adminStatMetrics: '📊 المقاييس',
+                adminStatTickets: '🔢 التذاكر',
+                adminAdminsTitle: '👑 إدارة المدراء (Admins)',
+                adminAdminsOnly: 'المدراء فقط يمكنهم فتح نافذة الإدارة هذه.',
+                adminLoading: '⏳ جاري التحميل...',
+                adminNewAdminPlaceholder: 'إيميل المدير الجديد...',
+                adminAdd: '➕ إضافة',
+                adminAccessTitle: '👥 إدارة المستخدمين المصرح لهم (Access)',
+                adminAccessOnly: 'هؤلاء فقط يمكنهم فتح الموقع. المدراء مسموح لهم تلقائياً.',
+                adminNewAllowedPlaceholder: 'إيميل المستخدم الجديد...',
+                adminDeleteConfirmTitle: '⚠️ تأكيد الحذف النهائي',
+                adminDeleteMsgPrefix: 'سيتم حذف',
+                adminDeleteMsgSuffix: 'وجميع بياناته نهائياً. لا يمكن التراجع.',
+                adminDeleteConfirmHint: 'للتأكيد اكتب البريد الإلكتروني للوكيل بالضبط:',
+                adminDeleteConfirmPlaceholder: 'اكتب البريد الإلكتروني هنا...',
+                adminCancel: 'إلغاء',
+                adminDeleteConfirmBtn: '🗑️ حذف نهائي',
+                adminClose: 'إغلاق النافذة',
+                adminUserMgmtPublishedOnly: 'إدارة المستخدمين متاحة في النسخة المنشورة.',
+                adminNoAgents: 'لا يوجد وكلاء بعد.',
+                adminNoAdmins: 'لا يوجد مدراء.',
+                adminNoAllowed: 'لا يوجد مستخدمون مصرح لهم بعد.',
+                adminBannedSuffix: '(محظور)',
+                adminUnban: '✅ إلغاء',
+                adminBan: '🚫 حظر',
+                adminDelete: '🗑️ حذف',
+                adminYou: 'أنت',
+                adminPrimary: 'أساسي',
+                adminRemove: 'إزالة',
+                adminEnterEmailFirst: '⚠️ أدخل إيميل أولاً.',
+                adminAdded: '✅ تمت الإضافة.',
+                adminRemoved: '✅ تمت الإزالة.',
+                adminFailed: 'تعذر.',
+                adminPreviewValid: 'صيغة صحيحة وجاهزة ✓',
+                adminPreviewInvalid: 'خطأ في بنية JSON ❌',
+                adminNeedPaste: '⚠️ يرجى لصق كود الـ JSON أولاً في المربع أعلاه.',
+                adminInvalidJson: '⚠️ النص الملصق ليس كود JSON صالح. يرجى إعادة نسخ النتائج من الإضافة.',
+                adminSaving: '⏳ جاري فرز وحفظ البيانات في Google Sheets...\nيرجى الانتظار بضع ثوانٍ...',
+                adminSaveSuccess: '🎉 تم بنجاح الحفظ والتحديث في Google Sheet!\n\n• تم تحديث بيانات: ({agents}) وكيلاً.\n• تم فحص وحفظ: ({drills}) مقياساً تفصيلياً.\n• إجمالي التذاكر المسجلة بالأرشيف: ({tickets}) تذكرة.\n• حالة التكرار: تم استبعاد التكرارات بنجاح ✓\n\nجاري الآن تحديث أرقام الداشبورد تلقائياً...',
+                adminSaveFail: 'تعذر حفظ البيانات في Google Sheet.',
+                adminSaveError: '❌ حدث خطأ أثناء الحفظ في الشيت: ',
+                adminOpenSheetHint: 'يرجى فتح Google Sheet من حساب Google الخاص بك.',
+                adminOpenSheetPublishedHint: 'في السكربت المنشور، سينقلك هذا الزر إلى ملف Google Sheet مباشرة.',
+                adminLocalSaveSuccess: '🎉 تم بنجاح حفظ وتأمين بياناتك محلياً!\n• تم تحديث وحفظ: ({agents}) وكيلاً.\n• إجمالي الصفوف: ({rows}) صفاً.\nالبيانات مؤمنة في المتصفح ولن تختفي عند الخروج والعودة.',
+                adminLocalSaveError: '❌ تعذر تحليل أو حفظ البيانات محلياً: ',
+
                 // Switch button
                 langSwitchBtn: 'English',
                 langSwitchTitle: 'Switch language to English'
@@ -625,7 +798,7 @@
         const emptyEl = el(periodType === 'weekly' ? 'weeklyEmpty' : 'monthlyEmpty');
         const metric = metricSelect ? metricSelect.value : 'csat';
 
-        if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري تحميل الجدول...</td></tr></tbody>';
+        if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">' + I18N.t('periodLoadingTable') + '</td></tr></tbody>';
         if (emptyEl) emptyEl.hidden = true;
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -636,7 +809,7 @@
                 })
                 .getAgentsPeriodTable(metric, periodType);
         } else {
-            if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">هذا الجدول متاح في النسخة المنشورة على Google Apps Script.</td></tr></tbody>';
+            if (tableEl) tableEl.innerHTML = '<tbody><tr><td class="period-cell empty" style="padding:40px;">' + I18N.t('periodPublishedOnly') + '</td></tr></tbody>';
         }
     }
 
@@ -656,7 +829,7 @@
         }
         if (emptyEl) emptyEl.hidden = true;
 
-        let html = '<thead><tr><th class="period-agent-col">الوكيل</th>';
+        let html = '<thead><tr><th class="period-agent-col">' + I18N.t('periodAgentCol') + '</th>';
         periods.forEach(p => {
             html += '<th>' + escPeriod(p.label) + (p.range ? '<small style="display:block;font-weight:400;">(' + escPeriod(p.range) + ')</small>' : '') + '</th>';
         });
@@ -686,7 +859,7 @@
             else cls = 'mid';
             text = v + '%';
         } else if (metric === 'abst') {
-            text = v + ' د';
+            text = v + ' ' + I18N.t('unitMinutes');
         } else {
             text = String(v);
         }
@@ -776,6 +949,15 @@
     }
 
     function setupEventListeners() {
+        // تفويض نقر زر "تفاصيل" في عمود المساهمة (AGBT)
+        document.addEventListener('click', (e) => {
+            const btn = e.target && e.target.closest ? e.target.closest('.agbt-details-btn') : null;
+            if (btn) {
+                const ticketId = btn.getAttribute('data-ticket-id');
+                if (ticketId) openAgbtDetails(ticketId);
+            }
+        });
+
         // زر تبديل اللغة الفوري (English / العربية)
         const btnLangToggle = el('btnLangToggle');
         if (btnLangToggle) {
@@ -934,14 +1116,14 @@
         function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
         function loadUsers() {
-            listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">' + I18N.t('adminLoading') + '</p>';
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run
                     .withSuccessHandler(renderUsers)
                     .withFailureHandler(err => { listEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; })
                     .getAllAgentsForAdmin();
             } else {
-                listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">إدارة المستخدمين متاحة في النسخة المنشورة.</p>';
+                listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">' + I18N.t('adminUserMgmtPublishedOnly') + '</p>';
             }
         }
 
@@ -949,16 +1131,16 @@
             const agents = (res && Array.isArray(res.agents)) ? res.agents : [];
             const bannedSet = new Set((res && Array.isArray(res.bannedAgents)) ? res.bannedAgents : []);
             agents.forEach(u => { u.banned = bannedSet.has(String(u.email || '').toLowerCase().trim()); });
-            if (!agents.length) { listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد وكلاء بعد.</p>'; return; }
+            if (!agents.length) { listEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">' + I18N.t('adminNoAgents') + '</p>'; return; }
             listEl.innerHTML = '';
             agents.forEach(u => {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(15,23,42,0.5);border:1px solid ' + (u.banned ? 'rgba(245,158,11,0.5)' : 'var(--border)') + ';border-radius:8px;';
                 row.innerHTML = '<div style="flex:1;min-width:0;">' +
-                    '<div style="font-size:12.5px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.name || u.email) + (u.banned ? ' <span style="color:#fbbf24;font-size:11px;">(محظور)</span>' : '') + '</div>' +
+                    '<div style="font-size:12.5px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.name || u.email) + (u.banned ? ' <span style="color:#fbbf24;font-size:11px;">' + I18N.t('adminBannedSuffix') + '</span>' : '') + '</div>' +
                     '<div style="font-size:11px;color:var(--muted);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.email) + '</div></div>' +
-                    '<button type="button" class="admin-btn-ghost" data-action="toggle" data-email="' + esc(u.email) + '" data-banned="' + u.banned + '" style="padding:5px 10px;font-size:11px;white-space:nowrap;">' + (u.banned ? '✅ إلغاء' : '🚫 حظر') + '</button>' +
-                    '<button type="button" class="admin-btn-ghost" data-action="del" data-email="' + esc(u.email) + '" data-name="' + esc(u.name || u.email) + '" style="padding:5px 10px;font-size:11px;color:#f87171;white-space:nowrap;">🗑️ حذف</button>';
+                    '<button type="button" class="admin-btn-ghost" data-action="toggle" data-email="' + esc(u.email) + '" data-banned="' + u.banned + '" style="padding:5px 10px;font-size:11px;white-space:nowrap;">' + (u.banned ? I18N.t('adminUnban') : I18N.t('adminBan')) + '</button>' +
+                    '<button type="button" class="admin-btn-ghost" data-action="del" data-email="' + esc(u.email) + '" data-name="' + esc(u.name || u.email) + '" style="padding:5px 10px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminDelete') + '</button>';
                 listEl.appendChild(row);
             });
             listEl.querySelectorAll('[data-action="toggle"]').forEach(b => b.addEventListener('click', () => {
@@ -1046,7 +1228,7 @@
 
         function loadAdmins() {
             if (!adminsListEl) return;
-            adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">' + I18N.t('adminLoading') + '</p>';
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(renderAdmins).withFailureHandler(err => { adminsListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAdminsList();
             }
@@ -1055,7 +1237,7 @@
             if (!adminsListEl) return;
             const admins = (res && Array.isArray(res.admins)) ? res.admins : [];
             const currentUser = (res && res.currentUser) || '';
-            if (!admins.length) { adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مدراء.</p>'; return; }
+            if (!admins.length) { adminsListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">' + I18N.t('adminNoAdmins') + '</p>'; return; }
             adminsListEl.innerHTML = '';
             admins.forEach(email => {
                 const isPrimary = email.toLowerCase() === 'sultan.alkharmani@tabby.sa';
@@ -1063,34 +1245,34 @@
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
                 row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
-                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
-                    (isPrimary ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,0.2);color:#fbbf24;white-space:nowrap;">أساسي</span>' : '') +
-                    (isPrimary ? '' : '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>');
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">' + I18N.t('adminYou') + '</span>' : '') +
+                    (isPrimary ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,0.2);color:#fbbf24;white-space:nowrap;">' + I18N.t('adminPrimary') + '</span>' : '') +
+                    (isPrimary ? '' : '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminRemove') + '</button>');
                 adminsListEl.appendChild(row);
             });
             adminsListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAdmin(b.getAttribute('data-email'))));
         }
         function addAdmin() {
             const email = newAdminInput ? newAdminInput.value.trim() : '';
-            if (!email) { if (adminsStatus) { adminsStatus.textContent = '⚠️ أدخل إيميل أولاً.'; adminsStatus.style.color = '#fbbf24'; } return; }
+            if (!email) { if (adminsStatus) { adminsStatus.textContent = I18N.t('adminEnterEmailFirst'); adminsStatus.style.color = '#fbbf24'; } return; }
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(res => {
-                    if (res && res.success) { if (newAdminInput) newAdminInput.value = ''; if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإضافة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
-                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                    if (res && res.success) { if (newAdminInput) newAdminInput.value = ''; if (adminsStatus) { adminsStatus.textContent = I18N.t('adminAdded'); adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : I18N.t('adminFailed')); adminsStatus.style.color = '#f87171'; }
                 }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).addAdminEmail(email);
             }
         }
         function removeAdmin(email) {
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(res => {
-                    if (res && res.success) { if (adminsStatus) { adminsStatus.textContent = '✅ تمت الإزالة.'; adminsStatus.style.color = '#34d399'; } loadAdmins(); }
-                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); adminsStatus.style.color = '#f87171'; }
+                    if (res && res.success) { if (adminsStatus) { adminsStatus.textContent = I18N.t('adminRemoved'); adminsStatus.style.color = '#34d399'; } loadAdmins(); }
+                    else if (adminsStatus) { adminsStatus.textContent = '❌ ' + (res && res.message ? res.message : I18N.t('adminFailed')); adminsStatus.style.color = '#f87171'; }
                 }).withFailureHandler(err => { if (adminsStatus) { adminsStatus.textContent = '❌ ' + err.message; adminsStatus.style.color = '#f87171'; } }).removeAdminEmail(email);
             }
         }
         function loadAllowed() {
             if (!allowedListEl) return;
-            allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">⏳ جاري التحميل...</p>';
+            allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;margin:0;">' + I18N.t('adminLoading') + '</p>';
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(renderAllowed).withFailureHandler(err => { allowedListEl.innerHTML = '<p style="color:#f87171;font-size:12px;">❌ ' + esc(err.message) + '</p>'; }).getAllowedList();
             }
@@ -1099,34 +1281,34 @@
             if (!allowedListEl) return;
             const allowed = (res && Array.isArray(res.allowed)) ? res.allowed : [];
             const currentUser = (res && res.currentUser) || '';
-            if (!allowed.length) { allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">لا يوجد مستخدمون مصرح لهم بعد.</p>'; return; }
+            if (!allowed.length) { allowedListEl.innerHTML = '<p style="color:var(--muted);font-size:12px;">' + I18N.t('adminNoAllowed') + '</p>'; return; }
             allowedListEl.innerHTML = '';
             allowed.forEach(email => {
                 const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
                 row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
-                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">أنت</span>' : '') +
-                    '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">إزالة</button>';
+                    (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">' + I18N.t('adminYou') + '</span>' : '') +
+                    '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminRemove') + '</button>';
                 allowedListEl.appendChild(row);
             });
             allowedListEl.querySelectorAll('[data-email]').forEach(b => b.addEventListener('click', () => removeAllowed(b.getAttribute('data-email'))));
         }
         function addAllowed() {
             const email = newAllowedInput ? newAllowedInput.value.trim() : '';
-            if (!email) { if (allowedStatus) { allowedStatus.textContent = '⚠️ أدخل إيميل أولاً.'; allowedStatus.style.color = '#fbbf24'; } return; }
+            if (!email) { if (allowedStatus) { allowedStatus.textContent = I18N.t('adminEnterEmailFirst'); allowedStatus.style.color = '#fbbf24'; } return; }
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(res => {
-                    if (res && res.success) { if (newAllowedInput) newAllowedInput.value = ''; if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإضافة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
-                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                    if (res && res.success) { if (newAllowedInput) newAllowedInput.value = ''; if (allowedStatus) { allowedStatus.textContent = I18N.t('adminAdded'); allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : I18N.t('adminFailed')); allowedStatus.style.color = '#f87171'; }
                 }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).addAllowedEmail(email);
             }
         }
         function removeAllowed(email) {
             if (typeof google !== 'undefined' && google.script && google.script.run) {
                 google.script.run.withSuccessHandler(res => {
-                    if (res && res.success) { if (allowedStatus) { allowedStatus.textContent = '✅ تمت الإزالة.'; allowedStatus.style.color = '#34d399'; } loadAllowed(); }
-                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : 'تعذر.'); allowedStatus.style.color = '#f87171'; }
+                    if (res && res.success) { if (allowedStatus) { allowedStatus.textContent = I18N.t('adminRemoved'); allowedStatus.style.color = '#34d399'; } loadAllowed(); }
+                    else if (allowedStatus) { allowedStatus.textContent = '❌ ' + (res && res.message ? res.message : I18N.t('adminFailed')); allowedStatus.style.color = '#f87171'; }
                 }).withFailureHandler(err => { if (allowedStatus) { allowedStatus.textContent = '❌ ' + err.message; allowedStatus.style.color = '#f87171'; } }).removeAllowedEmail(email);
             }
         }
@@ -1224,7 +1406,7 @@
             btnClear.addEventListener('click', () => {
                 if (jsonInput) jsonInput.value = '';
                 parsedPayload = null;
-                updatePreview(0, 0, 0, 'في انتظار اللصق', 'var(--muted)');
+                updatePreview(0, 0, 0, I18N.t('adminPrevStatusWaiting'), 'var(--muted)');
                 if (statusBox) statusBox.style.display = 'none';
             });
         }
@@ -1234,7 +1416,7 @@
             const text = jsonInput.value.trim();
             if (!text) {
                 parsedPayload = null;
-                updatePreview(0, 0, 0, 'في انتظار اللصق', 'var(--muted)');
+                updatePreview(0, 0, 0, I18N.t('adminPrevStatusWaiting'), 'var(--muted)');
                 if (btnSave) btnSave.disabled = false;
                 return;
             }
@@ -1264,11 +1446,11 @@
                     agentsCount = uniqueEm.size;
                 }
 
-                updatePreview(agentsCount, drillsCount, ticketsCount, 'صيغة صحيحة وجاهزة ✓', '#34d399');
+                updatePreview(agentsCount, drillsCount, ticketsCount, I18N.t('adminPreviewValid'), '#34d399');
                 if (btnSave) btnSave.disabled = false;
             } catch (e) {
                 parsedPayload = null;
-                updatePreview(0, 0, 0, 'خطأ في بنية JSON ❌', '#f87171');
+                updatePreview(0, 0, 0, I18N.t('adminPreviewInvalid'), '#f87171');
                 if (btnSave) btnSave.disabled = true;
             }
         }
@@ -1300,12 +1482,12 @@
                 if (!jsonInput) return;
                 const text = jsonInput.value.trim();
                 if (!text) {
-                    showAdminStatus('error', '⚠️ يرجى لصق كود الـ JSON أولاً في المربع أعلاه.');
+                    showAdminStatus('error', I18N.t('adminNeedPaste'));
                     return;
                 }
 
                 if (!parsedPayload) {
-                    showAdminStatus('error', '⚠️ النص الملصق ليس كود JSON صالح. يرجى إعادة نسخ النتائج من الإضافة.');
+                    showAdminStatus('error', I18N.t('adminInvalidJson'));
                     return;
                 }
 
@@ -1316,29 +1498,23 @@
                 };
 
                 btnSave.disabled = true;
-                showAdminStatus('loading', '⏳ جاري فرز وحفظ البيانات في Google Sheets...\nيرجى الانتظار بضع ثوانٍ...');
+                showAdminStatus('loading', I18N.t('adminSaving'));
 
                 if (typeof google !== 'undefined' && google.script && google.script.run) {
                     google.script.run
                         .withSuccessHandler((res) => {
                             btnSave.disabled = false;
                             if (res && res.success) {
-                                const msg = `🎉 تم بنجاح الحفظ والتحديث في Google Sheet!\n\n` +
-                                            `• تم تحديث بيانات: (${res.agentsCount || 0}) وكيلاً.\n` +
-                                            `• تم فحص وحفظ: (${res.drillCount || 0}) مقياساً تفصيلياً.\n` +
-                                            `• إجمالي التذاكر المسجلة بالأرشيف: (${res.ticketsCount || 0}) تذكرة.\n` +
-                                            `• حالة التكرار: تم استبعاد التكرارات بنجاح ✓\n\n` +
-                                            `جاري الآن تحديث أرقام الداشبورد تلقائياً...`;
-                                showAdminStatus('success', msg);
+                                showAdminStatus('success', I18N.t('adminSaveSuccess', { agents: (res.agentsCount || 0), drills: (res.drillCount || 0), tickets: (res.ticketsCount || 0) }));
                                 // تحديث أرقام الداشبورد فوراً!
                                 setTimeout(loadSheetData, 500);
                             } else {
-                                showAdminStatus('error', '❌ ' + (res?.message || 'تعذر حفظ البيانات في Google Sheet.'));
+                                showAdminStatus('error', '❌ ' + (res?.message || I18N.t('adminSaveFail')));
                             }
                         })
                         .withFailureHandler((err) => {
                             btnSave.disabled = false;
-                            showAdminStatus('error', '❌ حدث خطأ أثناء الحفظ في الشيت: ' + err.message);
+                            showAdminStatus('error', I18N.t('adminSaveError') + err.message);
                         })
                         .importDataFromAdminPortal(text, options);
                 } else {
@@ -1350,11 +1526,11 @@
                             localStorage.setItem('gas_agent_dashboard_local_data', JSON.stringify(localData));
                             localStorage.setItem('gas_agent_dashboard_raw_json', text);
                             btnSave.disabled = false;
-                            showAdminStatus('success', `🎉 تم بنجاح حفظ وتأمين بياناتك محلياً!\n• تم تحديث وحفظ: (${localData.agents.length}) وكيلاً.\n• إجمالي الصفوف: (${localData.summary.totalDrillRows}) صفاً.\nالبيانات مؤمنة في المتصفح ولن تختفي عند الخروج والعودة.`);
+                            showAdminStatus('success', I18N.t('adminLocalSaveSuccess', { agents: localData.agents.length, rows: localData.summary.totalDrillRows }));
                             setTimeout(loadLocalPreviewMode, 400);
                         } catch (err) {
                             btnSave.disabled = false;
-                            showAdminStatus('error', '❌ تعذر تحليل أو حفظ البيانات محلياً: ' + err.message);
+                            showAdminStatus('error', I18N.t('adminLocalSaveError') + err.message);
                         }
                     }, 500);
                 }
@@ -1368,11 +1544,11 @@
                     google.script.run
                         .withSuccessHandler(url => {
                             if (url) window.open(url, '_blank');
-                            else alert('يرجى فتح Google Sheet من حساب Google الخاص بك.');
+                            else alert(I18N.t('adminOpenSheetHint'));
                         })
                         .getSpreadsheetUrl();
                 } else {
-                    alert('في السكربت المنشور، سينقلك هذا الزر إلى ملف Google Sheet مباشرة.');
+                    alert(I18N.t('adminOpenSheetPublishedHint'));
                 }
             });
         }
@@ -2029,6 +2205,10 @@
         const rawHeader = data.header || [];
         const rawRows = data.rows || [];
 
+        // دعم تحليل المساهمة لجدول AGBT (يبحث بنفس رقم التكت في جلسات كل الوكلاء)
+        const isAgbtMetric = AppState.selectedMetric === 'agbt';
+        const ticketColIdx = isAgbtMetric ? findHeaderCol(rawHeader, 'ticket_id', 'ticket id', 'session_id', 'session id', 'ticket_number', 'ticket number', 'ticket') : -1;
+
         head.innerHTML = '';
         const trHead = document.createElement('tr');
         rawHeader.forEach((colName, colIdx) => {
@@ -2056,6 +2236,12 @@
             });
             trHead.appendChild(th);
         });
+        if (isAgbtMetric) {
+            const thContrib = document.createElement('th');
+            thContrib.textContent = I18N.currentLang === 'ar' ? 'المساهمة' : 'Contribution';
+            thContrib.style.cursor = 'default';
+            trHead.appendChild(thContrib);
+        }
         head.appendChild(trHead);
 
         // الصفوف هنا هي "صفحة" جاهزة قادمة من الخادم — لا فلترة أو فرز إضافي على المتصفح
@@ -2074,8 +2260,143 @@
                 td.innerHTML = formatDrillCell(cell, colName);
                 tr.appendChild(td);
             });
+            if (isAgbtMetric) {
+                const tdContrib = document.createElement('td');
+                tdContrib.className = 'agbt-contrib-cell';
+                tdContrib.style.textAlign = 'center';
+                const ticketId = ticketColIdx !== -1 ? String(rowCells[ticketColIdx] || '').trim() : '';
+                tdContrib.setAttribute('data-ticket-id', ticketId);
+                tdContrib.innerHTML = '<span style="color:var(--muted); font-size:11px;">⏳</span>';
+                tr.appendChild(tdContrib);
+            }
             body.appendChild(tr);
         });
+        if (isAgbtMetric) loadAgbtAttribution();
+    }
+
+    // ============ تحليل مساهمة AGBT (نسبة ودقائق الوكيل في كل تكت) ============
+    function loadAgbtAttribution() {
+        const email = AppState.selectedAgent;
+        if (!email) return;
+        const cells = document.querySelectorAll('.agbt-contrib-cell');
+        if (!cells.length) return;
+        const ticketIds = [];
+        cells.forEach(c => {
+            const id = c.getAttribute('data-ticket-id');
+            if (id) ticketIds.push(id);
+        });
+        if (!ticketIds.length) {
+            cells.forEach(c => { c.innerHTML = '<span style="color:var(--muted); opacity:0.6;">—</span>'; });
+            return;
+        }
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(res => renderAgbtAttribution(res))
+                .withFailureHandler(() => {
+                    cells.forEach(c => { c.innerHTML = '<span style="color:var(--muted); opacity:0.6;">—</span>'; });
+                })
+                .getAgbtTicketAttribution(email, ticketIds);
+        } else {
+            cells.forEach(c => { c.innerHTML = '<span style="color:var(--muted); opacity:0.6; font-size:10px;">' + (I18N.currentLang === 'ar' ? 'منشور فقط' : 'Published only') + '</span>'; });
+        }
+    }
+
+    function renderAgbtAttribution(res) {
+        const cells = document.querySelectorAll('.agbt-contrib-cell');
+        if (!res || !res.success || !Array.isArray(res.items)) {
+            cells.forEach(c => { c.innerHTML = '<span style="color:var(--muted); opacity:0.6;">—</span>'; });
+            return;
+        }
+        const map = {};
+        res.items.forEach(it => { map[String(it.ticketId)] = it; });
+        cells.forEach(c => {
+            const id = c.getAttribute('data-ticket-id');
+            const it = id ? map[id] : null;
+            c.innerHTML = agbtContribHtml(it, id);
+        });
+    }
+
+    function fmtMins(m) {
+        const n = Math.round((m || 0) * 10) / 10;
+        return I18N.currentLang === 'ar' ? (n + ' د') : (n + 'm');
+    }
+
+    function agbtContribHtml(it, ticketId) {
+        if (!it || !(it.totalMins > 0) || it.agentPct === null || it.agentPct === undefined) {
+            return '<span style="color:var(--muted); opacity:0.5; font-size:11px;">—</span>';
+        }
+        const badge = it.isMainCause
+            ? '<span style="display:inline-block; margin-top:2px; padding:1px 7px; font-size:9px; background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.4); border-radius:999px;">' + (I18N.currentLang === 'ar' ? 'المتسبب' : 'Main') + '</span>'
+            : '';
+        const btn = '<button type="button" class="agbt-details-btn" data-ticket-id="' + escPeriod(ticketId) + '" style="display:inline-block; margin-top:3px; padding:2px 8px; font-size:10px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.4); color:#38bdf8; border-radius:6px; cursor:pointer;">' + (I18N.currentLang === 'ar' ? 'تفاصيل' : 'Details') + '</button>';
+        return '<div style="line-height:1.25;">'
+            + '<div style="font-weight:700; color:#fff; font-size:12px; font-variant-numeric:tabular-nums;">' + fmtMins(it.agentMins) + '</div>'
+            + '<div style="font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums;">' + it.agentPct + '% ' + (I18N.currentLang === 'ar' ? 'من' : 'of') + ' ' + fmtMins(it.totalMins) + '</div>'
+            + badge + '<br>' + btn
+            + '</div>';
+    }
+
+    function openAgbtDetails(ticketId) {
+        const existing = document.getElementById('agbtDetailsOverlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'agbtDetailsOverlay';
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; background:rgba(7,12,22,0.72); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:20px;';
+        overlay.innerHTML = '<div style="background:#0d1527; border:1px solid var(--border); border-radius:16px; max-width:560px; width:100%; max-height:80vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 60px rgba(0,0,0,0.6);">'
+            + '<div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">'
+            + '<h3 style="margin:0; font-size:16px; color:#fff;">' + (I18N.currentLang === 'ar' ? 'تفاصيل التكت' : 'Ticket details') + ' <span style="color:var(--muted); font-weight:400; font-size:13px;" dir="ltr">#' + escPeriod(ticketId) + '</span></h3>'
+            + '<button type="button" id="agbtDetailsClose" style="background:transparent; border:none; color:var(--muted); font-size:20px; cursor:pointer; line-height:1;">✕</button>'
+            + '</div>'
+            + '<div id="agbtDetailsBody" style="padding:16px 20px; overflow:auto; color:var(--text-sub); font-size:13px; text-align:center;">⏳ ' + (I18N.currentLang === 'ar' ? 'جاري البحث في جلسات جميع الوكلاء…' : 'Searching all agents sessions…') + '</div>'
+            + '</div>';
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelector('#agbtDetailsClose').addEventListener('click', () => overlay.remove());
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(res => renderAgbtDetails(res))
+                .withFailureHandler(err => {
+                    const b = document.getElementById('agbtDetailsBody');
+                    if (b) b.innerHTML = '<span style="color:#f87171;">❌ ' + escPeriod(err && err.message ? err.message : err) + '</span>';
+                })
+                .getAgbtTicketDetails(ticketId);
+        } else {
+            const b = document.getElementById('agbtDetailsBody');
+            if (b) b.innerHTML = '<span style="color:var(--muted);">' + (I18N.currentLang === 'ar' ? 'هذه الميزة متاحة في النسخة المنشورة فقط.' : 'Available in the published version only.') + '</span>';
+        }
+    }
+
+    function renderAgbtDetails(res) {
+        const b = document.getElementById('agbtDetailsBody');
+        if (!b) return;
+        if (!res || !res.success || !Array.isArray(res.agents) || !res.agents.length) {
+            b.innerHTML = '<div style="color:var(--muted); padding:24px; text-align:center;">📭 ' + (I18N.currentLang === 'ar' ? 'لا توجد جلسات مسجلة لهذا التكت.' : 'No sessions found for this ticket.') + '</div>';
+            return;
+        }
+        const total = Math.round((res.totalMins || 0) * 10) / 10;
+        let html = '<div style="font-size:13px; color:var(--muted); margin-bottom:12px;">' + (I18N.currentLang === 'ar' ? 'إجمالي الوقت على التكت:' : 'Total time on ticket:') + ' <strong style="color:#fff;">' + fmtMins(total) + '</strong> · ' + res.agents.length + ' ' + (I18N.currentLang === 'ar' ? 'وكيل' : 'agents') + '</div>';
+        res.agents.forEach((a, i) => {
+            const isMain = a.isMainCause;
+            const barPct = total > 0 ? Math.max(1, Math.round((a.mins / total) * 100)) : 0;
+            html += '<div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid rgba(51,65,85,0.4);">'
+                + '<div style="width:22px; text-align:center; font-weight:700; color:var(--muted);">' + (i + 1) + '</div>'
+                + '<div style="flex:1; min-width:0;">'
+                + '<div style="display:flex; align-items:center; gap:6px;">'
+                + '<span style="font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escPeriod(a.name || a.email) + '</span>'
+                + (isMain ? '<span style="padding:1px 6px; font-size:9px; background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.4); border-radius:999px;">' + (I18N.currentLang === 'ar' ? 'المتسبب الأكبر' : 'Top') + '</span>' : '')
+                + '</div>'
+                + '<div style="margin-top:3px; height:5px; background:rgba(255,255,255,0.06); border-radius:999px; overflow:hidden;"><div style="height:100%; width:' + barPct + '%; background:' + (isMain ? '#34d399' : '#38bdf8') + '; border-radius:999px;"></div></div>'
+                + '</div>'
+                + '<div style="text-align:right; font-variant-numeric:tabular-nums;">'
+                + '<div style="font-weight:700; color:#fff; font-size:12px;">' + fmtMins(a.mins) + '</div>'
+                + '<div style="font-size:10px; color:var(--muted);">' + (a.pct !== null && a.pct !== undefined ? a.pct + '%' : '—') + '</div>'
+                + '</div>'
+                + '</div>';
+        });
+        b.innerHTML = html;
     }
 
     function findHeaderCol(headers, ...candidates) {

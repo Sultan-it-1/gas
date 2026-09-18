@@ -21,8 +21,8 @@
             <p class="muted" id="topbarSubtitle" data-i18n="appSubtitle">Read and display agent performance metrics and detailed analytics directly and exclusively from Google Sheets.</p>
         </div>
         <div class="topbar-actions">
-            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" title="الإدارة — استيراد وحظر وحذف وإدارة المدراء">
-                <span>⚙️ الإدارة</span>
+            <button type="button" class="button" id="btnAdminPortal" style="background:rgba(56, 189, 248, 0.12);border:1px solid rgba(56, 189, 248, 0.4);color:#38bdf8;font-weight:600;cursor:pointer;" data-i18n-title="adminPortalBtnTitle" title="Admin — import, block, delete and manage admins">
+                <span data-i18n="adminPortalBtn">⚙️ Admin</span>
             </button>
             <button id="btnLangToggle" class="button lang-toggle-btn" type="button" title="Switch Language to Arabic / تغيير اللغة للعربية">
                 <span class="lang-icon">🌐</span>
@@ -405,10 +405,10 @@
         <div class="period-header">
             <div>
                 <h2>📅 Weekly Performance</h2>
-                <p class="muted">قيم جميع الوكلاء خلال أسابيع الشهر الحالي بناءً على مقياس محدد.</p>
+                <p class="muted" data-i18n="periodWeeklySubtitle">All agents values across weeks of the current month based on a selected metric.</p>
             </div>
             <div class="filter-group-inline">
-                <label for="weeklyMetricSelect">المقياس:</label>
+                <label for="weeklyMetricSelect" data-i18n="periodMetricLabel">Metric:</label>
                 <select id="weeklyMetricSelect">
                     <option value="csat" selected>CSAT</option>
                     <option value="abst">ABST</option>
@@ -417,9 +417,9 @@
             </div>
         </div>
         <div class="period-table-wrap">
-            <table class="period-table" id="weeklyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+            <table class="period-table" id="weeklyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ Loading...</td></tr></tbody></table>
         </div>
-        <p class="muted" id="weeklyEmpty" hidden>لا توجد بيانات أسبوعية بعد.</p>
+        <p class="muted" id="weeklyEmpty" hidden data-i18n="periodWeeklyEmpty">No weekly data yet.</p>
     </section>
 
     <!-- 4. Monthly View (Pivot Table) -->
@@ -427,10 +427,10 @@
         <div class="period-header">
             <div>
                 <h2>🗓️ Monthly Performance</h2>
-                <p class="muted">قيم جميع الوكلاء خلال آخر 6 أشهر بناءً على مقياس محدد.</p>
+                <p class="muted" data-i18n="periodMonthlySubtitle">All agents values across the last 6 months based on a selected metric.</p>
             </div>
             <div class="filter-group-inline">
-                <label for="monthlyMetricSelect">المقياس:</label>
+                <label for="monthlyMetricSelect" data-i18n="periodMetricLabel">Metric:</label>
                 <select id="monthlyMetricSelect">
                     <option value="csat" selected>CSAT</option>
                     <option value="abst">ABST</option>
@@ -439,9 +439,9 @@
             </div>
         </div>
         <div class="period-table-wrap">
-            <table class="period-table" id="monthlyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ جاري التحميل...</td></tr></tbody></table>
+            <table class="period-table" id="monthlyTable"><tbody><tr><td class="period-cell empty" style="padding:40px;">⏳ Loading...</td></tr></tbody></table>
         </div>
-        <p class="muted" id="monthlyEmpty" hidden>لا توجد بيانات شهرية بعد.</p>
+        <p class="muted" id="monthlyEmpty" hidden data-i18n="periodMonthlyEmpty">No monthly data yet.</p>
     </section>
 
     <p class="footnote" data-i18n="footerNotice">Data is pulled exclusively from Google Sheets and fed from the browser extension without duplication. Records are saved in Historical_Archive and Drill_Archive.</p>
@@ -454,11 +454,11 @@
     <div class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
         <div class="admin-modal-header">
             <div class="admin-header-title-wrap">
-                <span class="admin-header-badge">ADMIN PORTAL • بوابة الإدارة</span>
-                <h2 id="adminModalTitle">🔑 استيراد وحفظ البيانات إلى Google Sheets</h2>
-                <p class="admin-subtitle">الصق بيانات الـ JSON المنسوخة من الإضافة لحفظها وفرزها فوراً بدون مشاكل أذونات أو تكرار.</p>
+                <span class="admin-header-badge" data-i18n="adminPortalBadge">ADMIN PORTAL</span>
+                <h2 id="adminModalTitle" data-i18n="adminModalTitle">🔑 Import & Save Data to Google Sheets</h2>
+                <p class="admin-subtitle" data-i18n="adminSubtitle">Paste the JSON data copied from the extension to save and sort it instantly without permission or duplication issues.</p>
             </div>
-            <button type="button" class="admin-btn-close" id="btnCloseAdminModal" title="إغلاق النافذة">✕</button>
+            <button type="button" class="admin-btn-close" id="btnCloseAdminModal" data-i18n-title="adminClose" title="Close window">✕</button>
         </div>
 
         <div class="admin-modal-body">
@@ -466,42 +466,42 @@
             <div class="admin-info-alert">
                 <span class="admin-info-icon">💡</span>
                 <div>
-                    <strong>طريقة الاستخدام السريعة:</strong> من إضافة المتصفح اضغط على <b>📋 نسخ بيانات JSON</b>، ثم الصق النص في المربع أدناه واضغط <b>حفظ واستيراد</b>. سيتم تحديث الشيت فوراً وبشكل تلقائي!
+                    <strong data-i18n="adminQuickHowToTitle">Quick guide:</strong> <span data-i18n="adminQuickHowToBody">from the browser extension press 📋 Copy JSON Data, then paste the text in the box below and press Save & Import. The sheet will be updated instantly and automatically!</span>
                 </div>
             </div>
 
             <!-- Input Box -->
             <div class="admin-input-card">
                 <div class="admin-input-header">
-                    <label for="adminJsonInput"><span>📋</span> الصق كود الـ JSON هنا:</label>
+                    <label for="adminJsonInput"><span>📋</span> <span data-i18n="adminPasteLabel">Paste JSON code here:</span></label>
                     <div class="admin-input-actions">
                         <label class="admin-btn-outline" style="cursor: pointer;">
-                            📁 رفع ملف JSON
+                            <span data-i18n="adminUploadFile">📁 Upload JSON File</span>
                             <input type="file" id="adminFileInput" accept=".json,application/json" style="display: none;">
                         </label>
-                        <button type="button" class="admin-btn-ghost" id="adminBtnClear">مسح النص</button>
+                        <button type="button" class="admin-btn-ghost" id="adminBtnClear" data-i18n="adminClearText">Clear Text</button>
                     </div>
                 </div>
-                <textarea id="adminJsonInput" class="admin-textarea" placeholder='{"agents": [...], "results": [...]} أو الصق محتوى ملف JSON هنا مباشرة...'></textarea>
+                <textarea id="adminJsonInput" class="admin-textarea" data-i18n-placeholder="adminTextareaPlaceholder" placeholder='{"agents": [...], "results": [...]} or paste JSON file content here directly...'></textarea>
             </div>
 
             <!-- Live Preview Grid -->
             <div class="admin-preview-grid">
                 <div class="admin-prev-card">
-                    <span class="admin-prev-label">إجمالي الوكلاء</span>
+                    <span class="admin-prev-label" data-i18n="adminPrevAgents">Total Agents</span>
                     <strong class="admin-prev-value" id="adminPrevAgents">0</strong>
                 </div>
                 <div class="admin-prev-card">
-                    <span class="admin-prev-label">مقاييس التفاصيل (Drills)</span>
+                    <span class="admin-prev-label" data-i18n="adminPrevDrills">Drill Metrics</span>
                     <strong class="admin-prev-value" id="adminPrevDrills">0</strong>
                 </div>
                 <div class="admin-prev-card">
-                    <span class="admin-prev-label">التذاكر بالأرشيف</span>
+                    <span class="admin-prev-label" data-i18n="adminPrevTickets">Archived Tickets</span>
                     <strong class="admin-prev-value" id="adminPrevTickets">0</strong>
                 </div>
                 <div class="admin-prev-card">
-                    <span class="admin-prev-label">حالة الفحص</span>
-                    <strong class="admin-prev-status" id="adminPrevStatus">في انتظار اللصق</strong>
+                    <span class="admin-prev-label" data-i18n="adminPrevStatusLabel">Scan Status</span>
+                    <strong class="admin-prev-status" id="adminPrevStatus" data-i18n="adminPrevStatusWaiting">Waiting for paste</strong>
                 </div>
             </div>
 
@@ -509,15 +509,15 @@
             <div class="admin-options-card">
                 <label class="admin-checkbox-label">
                     <input type="checkbox" id="adminChkSmartDates" checked>
-                    <span>تطبيق الفرز الذكي والتواريخ التلقائية لتفادي التكرار</span>
+                    <span data-i18n="adminChkSmartDates">Apply smart sorting and automatic dates to avoid duplication</span>
                 </label>
                 <label class="admin-checkbox-label">
                     <input type="checkbox" id="adminChkUpdateSummary" checked>
-                    <span>تحديث جدول ملخص اليوم (Daily_Summary)</span>
+                    <span data-i18n="adminChkUpdateSummary">Update daily summary table (Daily_Summary)</span>
                 </label>
                 <label class="admin-checkbox-label">
                     <input type="checkbox" id="adminChkUpdateArchive" checked>
-                    <span>ترحيل وتحديث الأرشيف التاريخي والتفصيلي (Historical & Drills)</span>
+                    <span data-i18n="adminChkUpdateArchive">Migrate and update historical and detailed archive (Historical & Drills)</span>
                 </label>
             </div>
 
@@ -527,37 +527,37 @@
             <!-- Actions -->
             <div class="admin-modal-actions">
                 <button type="button" id="adminBtnSave" class="admin-btn-primary">
-                    <span>🚀 حفظ واستيراد إلى Google Sheets</span>
+                    <span data-i18n="adminBtnSave">🚀 Save & Import to Google Sheets</span>
                 </button>
                 <button type="button" id="adminBtnOpenSheet" class="admin-btn-secondary">
-                    <span>📊 فتح ملف Google Sheet</span>
+                    <span data-i18n="adminBtnOpenSheet">📊 Open Google Sheet File</span>
                 </button>
             </div>
             <!-- إدارة المستخدمين (حظر / حذف) -->
             <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
-                    <h3 style="font-size:14px; color:#fff; margin:0;">👥 إدارة المستخدمين (حظر / حذف)</h3>
-                    <button type="button" id="adminBtnRefreshUsers" class="admin-btn-ghost" style="padding:6px 12px; font-size:12px;">🔄 تحديث</button>
+                    <h3 style="font-size:14px; color:#fff; margin:0;" data-i18n="adminUserManagementTitle">👥 User Management (Block / Delete)</h3>
+                    <button type="button" id="adminBtnRefreshUsers" class="admin-btn-ghost" style="padding:6px 12px; font-size:12px;" data-i18n="adminRefreshUsers">🔄 Refresh</button>
                 </div>
                 <div id="adminUsersList" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;">
-                    <p style="color:var(--muted); font-size:12px; margin:0;">اضغط "🔄 تحديث" لتحميل الوكلاء.</p>
+                    <p style="color:var(--muted); font-size:12px; margin:0;" data-i18n="adminPressRefresh">Press "🔄 Refresh" to load agents.</p>
                 </div>
             </div>
 
             <!-- إحصائيات سريعة -->
             <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
-                <h3 style="font-size:14px; color:#fff; margin:0 0 10px;">📊 إحصائيات سريعة</h3>
+                <h3 style="font-size:14px; color:#fff; margin:0 0 10px;" data-i18n="adminQuickStatsTitle">📊 Quick Stats</h3>
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
                     <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:11px; color:var(--muted);">👥 الوكلاء</div>
+                        <div style="font-size:11px; color:var(--muted);" data-i18n="adminStatAgents">👥 Agents</div>
                         <strong id="adminStatAgents" style="font-size:18px; color:#38bdf8;">0</strong>
                     </div>
                     <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:11px; color:var(--muted);">📊 المقاييس</div>
+                        <div style="font-size:11px; color:var(--muted);" data-i18n="adminStatMetrics">📊 Metrics</div>
                         <strong id="adminStatMetrics" style="font-size:18px; color:#38bdf8;">7</strong>
                     </div>
                     <div style="flex:1; min-width:100px; background:rgba(15,23,42,0.5); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:11px; color:var(--muted);">🔢 التذاكر</div>
+                        <div style="font-size:11px; color:var(--muted);" data-i18n="adminStatTickets">🔢 Tickets</div>
                         <strong id="adminStatRows" style="font-size:18px; color:#38bdf8;">0</strong>
                     </div>
                 </div>
@@ -565,28 +565,28 @@
 
             <!-- إدارة المدراء -->
             <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
-                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👑 إدارة المدراء (Admins)</h3>
-                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">المدراء فقط يمكنهم فتح نافذة الإدارة هذه.</p>
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;" data-i18n="adminAdminsTitle">👑 Admins Management</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;" data-i18n="adminAdminsOnly">Only admins can open this admin window.</p>
                 <div id="adminAdminsList" style="display:flex; flex-direction:column; gap:6px;">
-                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                    <p style="color:var(--muted); font-size:12px; margin:0;" data-i18n="adminLoading">⏳ Loading...</p>
                 </div>
                 <div style="display:flex; gap:8px; margin-top:10px;">
-                    <input type="email" id="adminNewAdminInput" placeholder="إيميل المدير الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
-                    <button type="button" id="adminBtnAddAdmin" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                    <input type="email" id="adminNewAdminInput" placeholder="New admin email..." data-i18n-placeholder="adminNewAdminPlaceholder" dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAdmin" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;" data-i18n="adminAdd">➕ Add</button>
                 </div>
                 <div id="adminAdminsStatus" style="margin-top:8px; font-size:11px;"></div>
             </div>
 
             <!-- إدارة المستخدمين المصرح لهم -->
             <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
-                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;">👥 إدارة المستخدمين المصرح لهم (Access)</h3>
-                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;">هؤلاء فقط يمكنهم فتح الموقع. المدراء مسموح لهم تلقائياً.</p>
+                <h3 style="font-size:14px; color:#fff; margin:0 0 6px;" data-i18n="adminAccessTitle">👥 Allowed Users Management (Access)</h3>
+                <p style="font-size:11px; color:var(--muted); margin:0 0 10px;" data-i18n="adminAccessOnly">Only these can open the site. Admins are allowed automatically.</p>
                 <div id="adminAllowedList" style="display:flex; flex-direction:column; gap:6px;">
-                    <p style="color:var(--muted); font-size:12px; margin:0;">⏳ جاري التحميل...</p>
+                    <p style="color:var(--muted); font-size:12px; margin:0;" data-i18n="adminLoading">⏳ Loading...</p>
                 </div>
                 <div style="display:flex; gap:8px; margin-top:10px;">
-                    <input type="email" id="adminNewAllowedInput" placeholder="إيميل المستخدم الجديد..." dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
-                    <button type="button" id="adminBtnAddAllowed" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;">➕ إضافة</button>
+                    <input type="email" id="adminNewAllowedInput" placeholder="New user email..." data-i18n-placeholder="adminNewAllowedPlaceholder" dir="ltr" autocomplete="off" style="flex:1; min-width:0; padding:8px 10px; background:#0f172a; border:1px solid var(--border); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+                    <button type="button" id="adminBtnAddAllowed" class="admin-btn-ghost" style="padding:8px 12px; font-size:12px; white-space:nowrap;" data-i18n="adminAdd">➕ Add</button>
                 </div>
                 <div id="adminAllowedStatus" style="margin-top:8px; font-size:11px;"></div>
             </div>
@@ -598,16 +598,16 @@
 <div id="adminDeleteModal" class="admin-modal-overlay" style="display:none;">
     <div class="admin-modal-card" style="max-width:420px;">
         <div class="admin-modal-header">
-            <h2 style="color:#fca5a5; font-size:16px; margin:0;">⚠️ تأكيد الحذف النهائي</h2>
+            <h2 style="color:#fca5a5; font-size:16px; margin:0;" data-i18n="adminDeleteConfirmTitle">⚠️ Confirm Permanent Deletion</h2>
             <button type="button" class="admin-btn-close" id="adminBtnCancelDelete">✕</button>
         </div>
         <div class="admin-modal-body">
-            <p style="font-size:13px; color:var(--muted); margin:0 0 6px;">سيتم حذف <strong id="adminDeleteAgentName" style="color:#fecaca;"></strong> وجميع بياناته نهائياً. لا يمكن التراجع.</p>
-            <p style="font-size:12px; color:var(--muted); margin:0 0 10px;">للتأكيد اكتب البريد الإلكتروني للوكيل بالضبط:</p>
-            <input type="text" id="adminDeleteConfirmInput" dir="ltr" autocomplete="off" placeholder="اكتب البريد الإلكتروني هنا..." style="width:100%; padding:9px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#fff; font-size:13px; outline:none;">
+            <p style="font-size:13px; color:var(--muted); margin:0 0 6px;"><span data-i18n="adminDeleteMsgPrefix">Will permanently delete</span> <strong id="adminDeleteAgentName" style="color:#fecaca;"></strong> <span data-i18n="adminDeleteMsgSuffix">and all their data. This cannot be undone.</span></p>
+            <p style="font-size:12px; color:var(--muted); margin:0 0 10px;" data-i18n="adminDeleteConfirmHint">To confirm, type the agent email exactly:</p>
+            <input type="text" id="adminDeleteConfirmInput" dir="ltr" autocomplete="off" placeholder="Type the email here..." data-i18n-placeholder="adminDeleteConfirmPlaceholder" style="width:100%; padding:9px 12px; background:#0f172a; border:1px solid #ef4444; border-radius:8px; color:#fff; font-size:13px; outline:none;">
             <div class="admin-modal-actions" style="margin-top:14px;">
-                <button type="button" class="admin-btn-secondary" id="adminBtnCancelDelete2">إلغاء</button>
-                <button type="button" class="admin-btn-primary" id="adminBtnConfirmDelete" disabled style="background:#ef4444; border-color:#ef4444;">🗑️ حذف نهائي</button>
+                <button type="button" class="admin-btn-secondary" id="adminBtnCancelDelete2" data-i18n="adminCancel">Cancel</button>
+                <button type="button" class="admin-btn-primary" id="adminBtnConfirmDelete" disabled style="background:#ef4444; border-color:#ef4444;" data-i18n="adminDeleteConfirmBtn">🗑️ Delete Permanently</button>
             </div>
         </div>
     </div>
