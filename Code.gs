@@ -86,11 +86,23 @@ function extractRowDate(row, header) {
     const idx = h.findIndex(c => c === name || c.includes(name));
     if (idx !== -1 && row[idx]) {
       const str = String(row[idx]).trim();
-      const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
-      if (m) return m[0];
+      const m = str.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+      if (m) {
+        const yy = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        const dd = parseInt(m[3], 10);
+        if (yy > 2000 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+          return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        }
+      }
       const dmy = str.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
       if (dmy) {
-        return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+        const d1 = parseInt(dmy[1], 10);
+        const d2 = parseInt(dmy[2], 10);
+        const y = parseInt(dmy[3], 10);
+        if (d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 12 && y > 2000) {
+          return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+        }
       }
       const dt = new Date(str);
       if (!isNaN(dt.getTime()) && dt.getFullYear() > 2000) {
@@ -100,10 +112,18 @@ function extractRowDate(row, header) {
   }
   for (let idx = 0; idx < h.length; idx++) {
     const col = h[idx];
-    if (col.includes('date') || col.includes('day') || col.includes('dt') || col.includes('time') || col.includes('start')) {
+    if (col.includes('date') || col.includes('day') || col.includes('dt') || col.includes('time') || col.includes('start') || col.endsWith('_at')) {
       const str = String(row[idx] || '').trim();
-      const m = str.match(/\b\d{4}-\d{2}-\d{2}\b/);
-      if (m) return m[0];
+      if (!str) continue;
+      const m = str.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+      if (m) {
+        const yy = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        const dd = parseInt(m[3], 10);
+        if (yy > 2000 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+          return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        }
+      }
     }
   }
   return null;
@@ -2383,7 +2403,8 @@ function deleteAgentData(email) {
  * ============================================================================
  */
 
-function buildWeeklyPeriods() {
+function buildWeeklyPeriods(lang) {
+  const isAr = (lang === 'ar');
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth(); // 0-based
@@ -2392,7 +2413,7 @@ function buildWeeklyPeriods() {
   let w = 1;
   for (let start = 1; start <= daysInMonth; start += 7) {
     const end = Math.min(start + 6, daysInMonth);
-    periods.push({ key: 'W' + w, label: 'أسبوع ' + w, range: start + '-' + end, year: year, month: month + 1, startDay: start, endDay: end });
+    periods.push({ key: 'W' + w, label: isAr ? ('أسبوع ' + w) : ('Week ' + w), range: start + '-' + end, year: year, month: month + 1, startDay: start, endDay: end });
     w++;
   }
   return periods;
@@ -2442,19 +2463,21 @@ function computePeriodValue(agg, m) {
   return null;
 }
 
-function metricLabelForPeriod(m) {
-  if (m === 'abst') return 'ABST (دقيقة)';
+function metricLabelForPeriod(m, lang) {
+  const isAr = (lang === 'ar');
+  if (m === 'abst') return isAr ? 'ABST (دقيقة)' : 'ABST (min)';
   if (m === 'sessions') return 'Sessions';
   return 'CSAT %';
 }
 
-function getAgentsPeriodTable(metric, periodType) {
+function getAgentsPeriodTable(metric, periodType, lang) {
   try {
     const m = (metric || 'csat').toLowerCase();
     const type = (periodType || 'weekly').toLowerCase();
+    const langKey = (lang === 'ar') ? 'ar' : 'en';
 
     // استرداد سريع من الكاش (يمنع إعادة قراءة كل ملفات Drive في كل مرة)
-    const cacheKey = 'PERIOD_TABLE_' + m + '_' + type;
+    const cacheKey = 'PERIOD_TABLE_' + m + '_' + type + '_' + langKey;
     try {
       const cachedRaw = CacheService.getScriptCache().get(cacheKey);
       if (cachedRaw) {
@@ -2465,7 +2488,7 @@ function getAgentsPeriodTable(metric, periodType) {
 
     const overview = getDashboardDataFromSheet();
     const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
-    const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods();
+    const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods(lang);
 
     const rows = [];
     for (const a of agents) {
@@ -2493,7 +2516,7 @@ function getAgentsPeriodTable(metric, periodType) {
       success: true,
       metric: m,
       periodType: type,
-      metricLabel: metricLabelForPeriod(m),
+      metricLabel: metricLabelForPeriod(m, lang),
       periods: periods.map(p => ({ key: p.key, label: p.label, range: p.range || '' })),
       agents: rows
     };
@@ -2515,7 +2538,9 @@ function clearCachedPeriodTables() {
     const cache = CacheService.getScriptCache();
     ['csat', 'abst', 'sessions'].forEach(function (m) {
       ['weekly', 'monthly'].forEach(function (t) {
-        cache.remove('PERIOD_TABLE_' + m + '_' + t);
+        ['en', 'ar'].forEach(function (lang) {
+          cache.remove('PERIOD_TABLE_' + m + '_' + t + '_' + lang);
+        });
       });
     });
   } catch (e) { /* تجاهل */ }
@@ -2526,6 +2551,7 @@ function clearCachedPeriodTables() {
 // ============================================================================
 
 const TICKET_SESSIONS_INDEX_FILE = "ticket_sessions_index.json";
+const AGBT_MATCH_TOLERANCE_MIN = 2; // الفرق المسموح (بالدقائق) بين مجموع الجلسات وقيمة sum_basket قبل اعتبار البيانات ناقصة
 
 function findTicketIdCol(header) {
   return findColIndex(header, 'ticket_id', 'ticket id', 'session_id', 'session id', 'ticket_number', 'ticket number', 'ticket');
@@ -2619,10 +2645,14 @@ function getAgentsNameMap() {
   return map;
 }
 
-function getAgbtTicketAttribution(email, ticketIds) {
+function getAgbtTicketAttribution(email, ticketIds, baseMins) {
   try {
     const agentEmail = String(email || '').trim();
     const ids = Array.isArray(ticketIds) ? ticketIds.map(String) : [];
+    const baseArr = Array.isArray(baseMins) ? baseMins.map(function (v) {
+      const n = parseFloat(v);
+      return isNaN(n) ? null : Math.round(n * 100) / 100;
+    }) : [];
     if (!agentEmail || ids.length === 0) {
       return { success: true, email: agentEmail, items: [] };
     }
@@ -2631,11 +2661,12 @@ function getAgbtTicketAttribution(email, ticketIds) {
     const aKey = agentEmail.toLowerCase();
     const items = [];
 
-    for (const rawId of ids) {
-      const tid = rawId.trim();
+    for (let i = 0; i < ids.length; i++) {
+      const tid = ids[i].trim();
+      const baseNum = (i < baseArr.length) ? baseArr[i] : null;
       const entry = index[tid];
       if (!entry) {
-        items.push({ ticketId: tid, totalMins: 0, agentMins: 0, agentPct: null, isMainCause: false, contributorCount: 0 });
+        items.push({ ticketId: tid, baseMins: baseNum, totalMins: 0, agentMins: 0, agentPct: null, isMainCause: false, contributorCount: 0, dataIncomplete: true });
         continue;
       }
 
@@ -2651,15 +2682,24 @@ function getAgbtTicketAttribution(email, ticketIds) {
 
       totalMins = Math.round(totalMins * 100) / 100;
       agentMins = Math.round(agentMins * 100) / 100;
-      const agentPct = totalMins > 0 ? Math.round((agentMins / totalMins) * 1000) / 10 : null;
+
+      // النسبة تُحسب مقابل الرقم الأساسي (sum_basket) وليس مقابل مجموع الجلسات
+      const agentPct = (baseNum !== null && baseNum !== undefined && baseNum > 0)
+        ? Math.round((agentMins / baseNum) * 1000) / 10
+        : null;
+
+      // تُعتبر البيانات ناقصة إذا اختلف مجموع الجلسات عن الرقم الأساسي بأكثر من دقيقتين
+      const dataIncomplete = (baseNum === null || baseNum === undefined || Math.abs(totalMins - baseNum) > AGBT_MATCH_TOLERANCE_MIN);
 
       items.push({
         ticketId: tid,
+        baseMins: baseNum,
         totalMins: totalMins,
         agentMins: agentMins,
         agentPct: agentPct,
         isMainCause: agentMins > 0 && topEmail.toLowerCase() === aKey,
-        contributorCount: contributors
+        contributorCount: contributors,
+        dataIncomplete: dataIncomplete
       });
     }
 
@@ -2669,25 +2709,29 @@ function getAgbtTicketAttribution(email, ticketIds) {
   }
 }
 
-function getAgbtTicketDetails(ticketId) {
+function getAgbtTicketDetails(ticketId, baseMins) {
   try {
     const tid = String(ticketId || '').trim();
     if (!tid) return { success: false, ticketId: tid, agents: [], message: 'No ticket id' };
+
+    const parsedBase = parseFloat(baseMins);
+    const baseNum = isNaN(parsedBase) ? null : Math.round(parsedBase * 100) / 100;
 
     const index = getTicketSessionsIndex(false);
     const entry = index[tid];
     const nameMap = getAgentsNameMap();
     const agents = [];
+    let summedTotal = 0;
 
     if (entry) {
-      let totalMins = 0, topMins = 0;
+      let topMins = 0;
       for (const eKey in entry) {
         const m = entry[eKey].mins;
         if (!(m > 0)) continue;
-        totalMins += m;
+        summedTotal += m;
         if (m > topMins) topMins = m;
       }
-      totalMins = Math.round(totalMins * 100) / 100;
+      summedTotal = Math.round(summedTotal * 100) / 100;
 
       for (const eKey in entry) {
         const m = entry[eKey].mins;
@@ -2697,18 +2741,22 @@ function getAgbtTicketDetails(ticketId) {
           email: aEmail,
           name: nameMap[aEmail.toLowerCase()] || aEmail.split('@')[0],
           mins: Math.round(m * 100) / 100,
-          pct: totalMins > 0 ? Math.round((m / totalMins) * 1000) / 10 : null,
+          pct: (baseNum !== null && baseNum > 0) ? Math.round((m / baseNum) * 1000) / 10 : null,
           isMainCause: m === topMins
         });
       }
       agents.sort(function (a, b) { return b.mins - a.mins; });
     }
 
+    const dataIncomplete = (baseNum === null || baseNum === undefined || Math.abs(summedTotal - baseNum) > AGBT_MATCH_TOLERANCE_MIN);
+
     return {
       success: true,
       ticketId: tid,
-      totalMins: Math.round(agents.reduce(function (s, a) { return s + a.mins; }, 0) * 100) / 100,
+      baseMins: baseNum,
+      totalMins: summedTotal,
       contributorCount: agents.length,
+      dataIncomplete: dataIncomplete,
       agents: agents
     };
   } catch (e) {
