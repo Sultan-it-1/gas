@@ -525,6 +525,35 @@ function _shiftCollectEvents_(records) {
  * يعيد { rowShiftDate: Map<rowKey,shiftDate>, diagnostics:[...], confidence, method, uncertain }.
  * لا يخترع حدودًا: عند عدم كفاية البيانات/وضوح الفصل يعيد خريطة فارغة (fallback يومي).
  */
+function _plannedShiftBuckets_(records) {
+  const shifts = new Map(), rowShiftDate = new Map();
+  (records || []).forEach(rec => {
+    const h = (rec.header || []).map(c => String(c).trim().toLowerCase().replace(/\s+/g, '_'));
+    const start = h.indexOf('plan_shift_start'), end = h.indexOf('plan_shift_end');
+    if (start < 0) return;
+    (rec.rows || []).forEach(row => {
+      const ts = parseTimestampValue(String(row[start] || ''));
+      const finish = end >= 0 ? parseTimestampValue(String(row[end] || '')) : null;
+      const epoch = _riyadhTsToEpochMs_(ts), endEpoch = _riyadhTsToEpochMs_(finish);
+      if (isFinite(epoch)) shifts.set(epoch, { start: epoch, end: isFinite(endEpoch) && endEpoch > epoch ? endEpoch : null, day: ts.slice(0, 10) });
+    });
+  });
+  const ordered = Array.from(shifts.values()).sort((a, b) => a.start - b.start);
+  (records || []).forEach(rec => {
+    const h = (rec.header || []).map(c => String(c).trim().toLowerCase().replace(/\s+/g, '_'));
+    const start = h.indexOf('plan_shift_start');
+    (rec.rows || []).forEach((row, ri) => {
+      const explicit = start >= 0 ? parseTimestampValue(String(row[start] || '')) : null;
+      if (explicit) { rowShiftDate.set(_shiftRowKey_(rec, ri), explicit.slice(0, 10)); return; }
+      const epoch = _riyadhTsToEpochMs_(shiftTimestampForRow(row, rec.header));
+      const shift = ordered.find(s => s.end !== null && epoch >= s.start && epoch < s.end);
+      if (shift) rowShiftDate.set(_shiftRowKey_(rec, ri), shift.day);
+    });
+  });
+  return { rowShiftDate, diagnostics: ordered.map(s => ({ day: s.day, start: _epochMsToRiyadhHHMM_(s.start), end: s.end === null ? null : _epochMsToRiyadhHHMM_(s.end) })),
+    uncertain: !ordered.length || ordered.some(s => s.end === null), confidence: ordered.length ? 1 : 0, method: 'plan_shift_start' };
+}
+
 function _inferShiftBuckets_(records) {
   const events = _shiftCollectEvents_(records).sort((a, b) => a.epoch - b.epoch);
   const diagnostics = [];
@@ -3035,7 +3064,7 @@ function getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour
       neighborRecords = prevRecs.concat(nextRecs);
     } catch (e) { neighborRecords = []; }
 
-    const inference = _inferShiftBuckets_(records.concat(neighborRecords));
+    const inference = _plannedShiftBuckets_(records.concat(neighborRecords));
     const bucketDateResolver = function (rec, row, ri) {
       const mapped = inference.rowShiftDate.get(_shiftRowKey_(rec, ri));
       if (mapped) return mapped;
@@ -3058,7 +3087,7 @@ function getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour
       month: month,
       days: days,
       shift: {
-        inferred: true,
+        inferred: false,
         uncertain: inference.uncertain,
         confidence: inference.confidence,
         method: inference.method

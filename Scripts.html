@@ -6822,6 +6822,7 @@
     function setupSimpleMetricTables_() {
         if (typeof MutationObserver === 'undefined' || !document.body) return;
         const modes = new Map();
+        const ticketCells = new WeakMap();
         const labels = {
             ticket_id: ['التكت', 'Ticket'], session_id: ['الجلسة', 'Session'],
             csat_adjusted: ['التقييم', 'Rating'], resolver: ['الوكيل', 'Agent'],
@@ -6829,11 +6830,27 @@
             ticket_country: ['الدولة', 'Country'], date_resolved_dubai: ['تاريخ الإغلاق', 'Resolved at'],
             csat_submitted_at_dubai: ['تاريخ التقييم', 'Rated at'],
             basket_session_time_min: ['ABST (دقيقة)', 'ABST (min)'],
-            time_not_working_h: ['Idle (ساعة)', 'Idle (hours)'],
-            time_not_working_h_shift_adjusted: ['Idle (ساعة)', 'Idle (hours)'],
+            time_not_working_h: ['وقت الخمول (ساعة)', 'Idle time (hours)'],
+            time_not_working_h_shift_adjusted: ['الخمول المعدّل للشفت (ساعة)', 'Shift-adjusted idle (hours)'],
+            date: ['التاريخ', 'Date'], day: ['اليوم', 'Day'],
+            plan_shift_start: ['بداية الدوام المجدولة', 'Planned shift start'],
+            fact_shift_start: ['بداية الدوام الفعلية', 'Actual shift start'],
+            plan_shift_end: ['نهاية الدوام المجدولة', 'Planned shift end'],
+            plan_breaks_h: ['مدة البريك المجدولة (ساعة)', 'Scheduled break duration (hours)'],
+            fact_breaks_h: ['البريك الفعلي (ساعة)', 'Actual breaks (hours)'],
+            break_exceed: ['تجاوز البريك', 'Break exceeded'],
+            exceed_mins: ['مدة التجاوز (دقيقة)', 'Exceed (min)'],
+            report_dt: ['تاريخ التقرير', 'Report date'],
+            lateness: ['التأخير (دقيقة)', 'Lateness (min)'],
+            lateness_mins: ['التأخير (دقيقة)', 'Lateness (min)'],
+            lateness_minutes: ['التأخير (دقيقة)', 'Lateness (min)'],
+            late_mins: ['التأخير (دقيقة)', 'Lateness (min)'],
+            late_minutes: ['التأخير (دقيقة)', 'Lateness (min)'],
+            break_exceed_mins: ['تجاوز البريك (دقيقة)', 'Break overrun (min)'],
+            break_exceed_minutes: ['تجاوز البريك (دقيقة)', 'Break overrun (min)'],
             sum_basket_time_for_ticket_per_hour_min_online_womt: ['AGBT (دقيقة)', 'AGBT (min)']
         };
-        const hidden = /^(customer_id|resolver_team_lead_id|resolver_team_lead_email|responsible_group|amount_of_comments|status_before_closure|week)$/i;
+        const hidden = /^(customer_id|resolver_team_lead_id|resolver_team_lead_email|responsible_group|amount_of_comments|status_before_closure|week|resolver|agent|agent_name|agent_email|email|name|ticket_country|country|tl|tl_name|tl_email|team_lead|team_lead_id|team_lead_name|team_lead_email|resolver_team_lead|is_home_office|home_office|الوكيل|اسم_الوكيل|الدولة|المشرف)$/i;
         let scheduled = false;
         function apply() {
             scheduled = false;
@@ -6842,6 +6859,19 @@
                 if (!headers.length) return;
                 const host = table.parentElement;
                 let toolbar = host.querySelector(':scope > .metric-table-view');
+                const isMetricDetail = table.classList.contains('chart-drilldown-table') ||
+                    (table.id === 'dataTable' && !!AppState.selectedAgent && AppState.selectedMetric !== 'all');
+                if (!isMetricDetail) {
+                    if (toolbar) toolbar.remove();
+                    table.classList.remove('metric-table-simple');
+                    table.querySelectorAll('th[hidden], td[hidden]').forEach(cell => { cell.hidden = false; });
+                    headers.forEach(th => {
+                        if (!th.dataset.originalLabel) return;
+                        const label = th.querySelector('span > span:not(.sort-icon)') || th;
+                        if (label.textContent !== th.dataset.originalLabel) label.textContent = th.dataset.originalLabel;
+                    });
+                    return;
+                }
                 const key = table.id || host.id || 'drill';
                 if (!toolbar) {
                     toolbar = document.createElement('div'); toolbar.className = 'metric-table-view';
@@ -6854,21 +6884,68 @@
                     host.insertBefore(toolbar, table);
                 }
                 const simple = (modes.get(key) || 'simple') === 'simple';
+                const metricKey = table.id === 'dataTable' ? String(AppState.selectedMetric || '').toLowerCase() : '';
+                const metricColumns = {
+                    idle: /^(date|day|report_dt|plan_shift_start|time_not_working_h|time_not_working_h_shift_adjusted)$/,
+                    lateness: /^(date|day|report_dt|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
+                    breakbreach: /^(date|day|report_dt|plan_shift_start|plan_breaks_h|fact_breaks_h|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
+                    csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel)$/,
+                    abst: /^(ticket_id|ticket_number|created_at_dubai|date|day|basket_session_time_min|session_time_min|abst)$/,
+                    agbt: /^(ticket_id|ticket_number|created_at_dubai|date|day|sum_basket_time_for_ticket_per_hour_min_online_womt|sum_basket_time_for_ticket_per_hour_min|basket_time|agbt|contribution|المساهمة)$/
+                };
+                const columnKeys = headers.map(h => String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_'));
+                const datePriority = ['plan_shift_start', 'csat_submitted_at_dubai', 'created_at_dubai', 'date_resolved_dubai', 'date', 'day', 'report_dt'];
+                const primaryDate = datePriority.find(c => columnKeys.includes(c));
+                const seenSimpleColumns = new Set();
                 toolbar.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'simple') === simple)));
                 table.classList.toggle('metric-table-simple', simple);
                 headers.forEach((th, index) => {
                     const label = th.querySelector('span > span:not(.sort-icon)') || th;
                     if (!th.dataset.originalLabel) th.dataset.originalLabel = label.textContent;
                     const original = th.dataset.originalLabel;
-                    const normalized = original.trim().toLowerCase();
-                    const omit = simple && hidden.test(normalized);
+                    const normalized = original.trim().toLowerCase().replace(/[\s-]+/g, '_');
+                    const isAbst = table.id === 'dataTable' && AppState.selectedMetric === 'abst';
+                    const abstExtra = isAbst && (/^(ticket_group|ticket_type|topic_?1|topic_?2|colu?mn_?(15|16|17))$/.test(normalized) ||
+                        (index >= 14 && index <= 16 && !normalized));
+                    const irrelevant = metricColumns[metricKey] && !metricColumns[metricKey].test(normalized);
+                    // Prefer the actual Idle source; adjusted is a fallback, not a second KPI.
+                    const duplicateIdle = metricKey === 'idle' && normalized === 'time_not_working_h_shift_adjusted' &&
+                        headers.some(h => String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_') === 'time_not_working_h');
+                    const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate;
+                    const duplicateColumn = !!metricColumns[metricKey] && seenSimpleColumns.has(normalized);
+                    seenSimpleColumns.add(normalized);
+                    const omit = simple && (hidden.test(normalized) || abstExtra || irrelevant || duplicateIdle || duplicateDate || duplicateColumn);
                     th.hidden = omit;
-                    const translated = labels[normalized];
+                    const translated = normalized === 'exceed_mins' && metricKey === 'lateness'
+                        ? ['التأخير (دقيقة)', 'Lateness (min)']
+                        : normalized === 'exceed_mins' && metricKey === 'breakbreach'
+                            ? ['تجاوز البريك (دقيقة)', 'Break overrun (min)'] : labels[normalized];
+                    if (simple && translated) th.title = original + ' — ' + translated[I18N.currentLang === 'ar' ? 0 : 1];
                     const display = simple ? (translated ? translated[I18N.currentLang === 'ar' ? 0 : 1] : original.replace(/_/g, ' ')) : original;
                     if (label.textContent !== display) label.textContent = display;
                     Array.from(table.tBodies).forEach(body => Array.from(body.rows).forEach(row => {
                         if (row.cells.length !== headers.length) return;
                         const cell = row.cells[index]; cell.hidden = omit;
+                        let saved = ticketCells.get(cell);
+                        if (simple && !saved) {
+                            const bo = cell.querySelector('a.bo-ticket-link');
+                            if (bo) {
+                                const href = bo.getAttribute('href');
+                                const ticketId = decodeURIComponent(href.slice(href.lastIndexOf('/') + 1));
+                                saved = { nodes: Array.from(cell.childNodes) };
+                                ticketCells.set(cell, saved);
+                                const number = document.createElement('a');
+                                number.href = href; number.target = '_blank'; number.rel = 'noopener noreferrer';
+                                number.className = 'simple-ticket-number'; number.dir = 'ltr';
+                                number.textContent = ticketId.slice(-5); number.title = ticketId;
+                                const shortcut = bo.cloneNode(true);
+                                cell.replaceChildren(number, document.createTextNode(' '), shortcut);
+                                cell.title = ticketId;
+                            }
+                        } else if (!simple && saved) {
+                            cell.replaceChildren(...saved.nodes);
+                            ticketCells.delete(cell);
+                        }
                         if (simple && !cell.title) cell.title = cell.textContent.trim();
                     }));
                 });
@@ -6882,6 +6959,45 @@
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupSimpleMetricTables_, { once: true });
     else setupSimpleMetricTables_();
+
+    function setupTableScrollButtons_() {
+        if (typeof MutationObserver === 'undefined' || !document.body) return;
+        let pending = false;
+        function scan() {
+            pending = false;
+            document.querySelectorAll('.table-wrap, .period-table-wrap, .chart-drilldown-scroll').forEach(wrap => {
+                let controls = wrap.querySelector(':scope > .table-scroll-controls');
+                if (!controls) {
+                    controls = document.createElement('div');
+                    controls.className = 'table-scroll-controls';
+                    controls.dir = 'ltr';
+                    [-1, 1].forEach(direction => {
+                        const button = document.createElement('button');
+                        button.type = 'button'; button.textContent = direction < 0 ? '◀' : '▶';
+                        button.setAttribute('aria-label', direction < 0 ? 'Scroll table left / تحريك الجدول يسارًا' : 'Scroll table right / تحريك الجدول يمينًا');
+                        button.title = button.getAttribute('aria-label');
+                        button.addEventListener('click', () => {
+                            // Physical directions also work with negative scrollLeft in RTL.
+                            wrap.scrollLeft += direction * Math.max(160, Math.round(wrap.clientWidth * 0.65));
+                        });
+                        controls.appendChild(button);
+                    });
+                    wrap.prepend(controls);
+                }
+                controls.hidden = wrap.scrollWidth <= wrap.clientWidth + 1;
+            });
+        }
+        function schedule() {
+            if (!pending) { pending = true; requestAnimationFrame(scan); }
+        }
+        new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+        window.addEventListener('resize', schedule);
+        // Tabs and Simple/Full can change overflow without replacing table rows.
+        document.addEventListener('click', schedule);
+        scan();
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupTableScrollButtons_, { once: true });
+    else setupTableScrollButtons_();
 
     function message(text, isError = false) {
         const s = el('status');
