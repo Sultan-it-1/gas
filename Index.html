@@ -516,6 +516,9 @@
                 <p class="muted" data-i18n="periodWeeklySubtitle">All agents values across weeks of the current month based on a selected metric.</p>
             </div>
             <div class="filter-group-inline">
+                <div class="period-search-wrap">
+                    <input type="search" id="weeklySearch" class="period-search-input" placeholder="Filter agents..." data-i18n-placeholder="weeklySearchPlaceholder">
+                </div>
                 <label for="weeklyMetricSelect" data-i18n="periodMetricLabel">Metric:</label>
                 <select id="weeklyMetricSelect">
                     <option value="csat" selected>CSAT</option>
@@ -538,6 +541,9 @@
                 <p class="muted" data-i18n="periodMonthlySubtitle">All agents values across the last 6 months based on a selected metric.</p>
             </div>
             <div class="filter-group-inline">
+                <div class="period-search-wrap">
+                    <input type="search" id="monthlySearch" class="period-search-input" placeholder="Filter agents..." data-i18n-placeholder="monthlySearchPlaceholder">
+                </div>
                 <label for="monthlyMetricSelect" data-i18n="periodMetricLabel">Metric:</label>
                 <select id="monthlyMetricSelect">
                     <option value="csat" selected>CSAT</option>
@@ -587,6 +593,7 @@
                             <span data-i18n="adminUploadFile">📁 Upload JSON File</span>
                             <input type="file" id="adminFileInput" accept=".json,application/json" style="display: none;">
                         </label>
+                        <button type="button" class="admin-btn-outline" id="adminBtnLoadSample" style="border-color:#38bdf8;color:#38bdf8;" data-i18n="adminLoadSample">📂 تحميل بيانات تجريبية</button>
                         <button type="button" class="admin-btn-ghost" id="adminBtnClear" data-i18n="adminClearText">Clear Text</button>
                     </div>
                 </div>

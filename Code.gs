@@ -16,6 +16,22 @@
  * ============================================================================
  */
 
+// Reuse permission lists and the root folder within ONE synchronous read only.
+// The finally block prevents cached authorization from crossing RPC requests.
+let dashboardReadContext_ = null;
+function withDashboardReadContext_(work) {
+  if (dashboardReadContext_) return work();
+  dashboardReadContext_ = new Map();
+  try { return work(); } finally { dashboardReadContext_ = null; }
+}
+function memoDashboardRead_(key, read) {
+  if (!dashboardReadContext_) return read();
+  if (dashboardReadContext_.has(key)) return dashboardReadContext_.get(key);
+  const value = read();
+  dashboardReadContext_.set(key, value);
+  return value;
+}
+
 const CONFIG = {
   // اسم المجلد الرئيسي في Google Drive
   DRIVE_FOLDER_NAME: "Agent_Performance_Hub_Data",
@@ -782,8 +798,8 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
 
     const incomingAgent = String(incoming.agent).trim().toLowerCase();
     const incomingMetric = String(incoming.metric).trim().toLowerCase();
-    const target = records.find(r => 
-      String(r.agent).trim().toLowerCase() === incomingAgent && 
+    const target = records.find(r =>
+      String(r.agent).trim().toLowerCase() === incomingAgent &&
       String(r.metric).trim().toLowerCase() === incomingMetric
     );
 
@@ -803,7 +819,21 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
         isNewRecord: true
       });
     } else {
+      // Preserve new columns, including repeated labels, before aligning rows.
+      const occurrences = new Map();
+      const available = new Map();
+      target.header.forEach(h => available.set(h, (available.get(h) || 0) + 1));
+      incoming.header.forEach(h => {
+        const count = (occurrences.get(h) || 0) + 1;
+        occurrences.set(h, count);
+        if (count > (available.get(h) || 0)) {
+          target.header.push(h);
+          available.set(h, count);
+        }
+      });
+      target.rows = target.rows.map(row => Array.from({ length: target.header.length }, (_, i) => row[i] == null ? '' : row[i]));
       const existingKeys = new Set(target.rows.map(r => rowKey(r, target.header)));
+      const existingRows = new Map(target.rows.map(r => [rowKey(r, target.header), r]));
       let addedCount = 0;
       let skippedCount = 0;
 
@@ -811,10 +841,15 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
         const alignedRow = alignRowColumns(row, incoming.header, target.header);
         const key = rowKey(alignedRow, target.header);
         if (existingKeys.has(key)) {
+          const savedRow = existingRows.get(key);
+          if (savedRow) alignedRow.forEach((cell, i) => {
+            if ((savedRow[i] === '' || savedRow[i] == null) && cell !== '' && cell != null) savedRow[i] = cell;
+          });
           skippedCount++;
         } else {
           existingKeys.add(key);
           target.rows.push(alignedRow);
+          existingRows.set(key, alignedRow);
           addedCount++;
         }
       }
@@ -1290,6 +1325,11 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     const agbtMinsIdx = h.findIndex(c => c.includes('sum_basket_time') || c === 'agbt' || c.includes('basket_time'));
     const csatScoreIdx = h.findIndex(c => c === 'csat_adjusted' || c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
 
+    const breakMetIdx = findColIndex(h, 'break exceed', 'break_exceed', 'status');
+    const breakExceedIdx = findColIndex(h, 'break exceed time', 'exceed_time', 'exceed_mins', 'exceed');
+    const lateIdx = findColIndex(h, 'exceed mins', 'exceed_mins', 'lateness', 'late_mins', 'delay_mins', 'delay');
+    const idleIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
+
     const rows = r.rows || [];
     for (let ri = 0; ri < rows.length; ri++) {
       const row = rows[ri];
@@ -1352,6 +1392,35 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
             entry.csatBad++;
           }
         }
+      } else if (metric === 'breakBreach' || metric === 'break' || metric === 'breakbreach') {
+        let breached = false;
+        if (breakMetIdx !== -1) {
+          const v = String(row[breakMetIdx] || '').toLowerCase().trim();
+          if (v === 'not met' || v === 'breached' || v.includes('breach')) breached = true;
+        }
+        let exceedM = 0;
+        if (breakExceedIdx !== -1) {
+          const v = parseFloat(row[breakExceedIdx]);
+          if (!isNaN(v) && v > 0) { exceedM = v; breached = true; }
+        }
+        if (breached) entry.breakBreaches++;
+        entry.breakExceedMins += exceedM;
+      } else if (metric === 'lateness' || metric === 'late') {
+        if (lateIdx !== -1) {
+          const v = parseFloat(row[lateIdx]);
+          if (!isNaN(v) && v > 0) {
+            entry.latenessIncidents++;
+            entry.latenessMins += v;
+          }
+        }
+      } else if (metric === 'idle') {
+        if (idleIdx !== -1) {
+          const v = parseFloat(row[idleIdx]);
+          if (!isNaN(v) && v > 0) {
+            entry.idleHours += v;
+            entry.idleCount = (entry.idleCount || 0) + 1;
+          }
+        }
       }
     }
   }
@@ -1379,6 +1448,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
       sessions,
       abstMins,
       abstSecs: Math.round(abstMins * 60),
+      agbtMins: entry.agbtCount > 0 ? Math.round((entry.agbtTotalMins / entry.agbtCount) * 100) / 100 : 0,
       agbtSecs: entry.agbtCount > 0 ? Math.round((entry.agbtTotalMins / entry.agbtCount) * 60) : 0,
       longSessions: entry.longSessions,
       long: entry.longSessions,
@@ -1387,6 +1457,11 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
       csatGood: entry.csatGood,
       csatBad: entry.csatBad,
       csatTotal: entry.csatTotal,
+      breakBreaches: entry.breakBreaches || 0,
+      breakExceedMins: Math.round((entry.breakExceedMins || 0) * 10) / 10,
+      latenessIncidents: entry.latenessIncidents || 0,
+      latenessMins: Math.round((entry.latenessMins || 0) * 10) / 10,
+      idleHours: (entry.idleCount > 0) ? Math.round(entry.idleHours * 100) / 100 : 0,
       count: sessions || 1
     };
   });
@@ -1485,6 +1560,10 @@ function getAccessDeniedHtml() {
  */
 
 function getOrCreateDataFolder() {
+  return memoDashboardRead_('folder', () => getOrCreateDataFolderImpl_());
+}
+
+function getOrCreateDataFolderImpl_() {
   const folderName = CONFIG.DRIVE_FOLDER_NAME || "Agent_Performance_Hub_Data";
   const folders = DriveApp.getFoldersByName(folderName);
   if (folders.hasNext()) {
@@ -1978,6 +2057,36 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
         };
       });
 
+      // حساب ترتيب الأداء والمفاضلة بالسيسات وتغير الرتبة اليومي (Rank, Tie-break, Rank Change)
+      const sortedForRank = [...finalAgentsList].sort((a, b) => {
+        const cA = Number(a.csat) || 0;
+        const cB = Number(b.csat) || 0;
+        if (cB !== cA) return cB - cA;
+        const tA = Number(a.csatTotal) || 0;
+        const tB = Number(b.csatTotal) || 0;
+        if (tB !== tA) return tB - tA;
+        const sA = Number(a.sessions) || 0;
+        const sB = Number(b.sessions) || 0;
+        return sB - sA;
+      });
+
+      const prevRankMap = {};
+      if (existingOverview && Array.isArray(existingOverview.agents)) {
+        existingOverview.agents.forEach(a => {
+          const em = String(a.email || '').trim().toLowerCase();
+          if (em && a.rank) prevRankMap[em] = Number(a.rank);
+        });
+      }
+
+      sortedForRank.forEach((a, idx) => {
+        const currentRank = idx + 1;
+        a.rank = currentRank;
+        const em = String(a.email || '').trim().toLowerCase();
+        const prev = prevRankMap[em] || (metaMap[em] && Number(metaMap[em].rank)) || null;
+        a.prevRank = prev;
+        a.rankChange = (prev !== null && !isNaN(prev)) ? (prev - currentRank) : null;
+      });
+
       // إجماليات ومتوسطات الفريق للشهر
       let sumCsat = 0, countCsat = 0;
       let sumLateness = 0;
@@ -1992,16 +2101,16 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
         sumBreaches += (parseInt(a.breakBreach, 10) || 0);
       });
 
-      const teamAvgCsat = monthAnalytics.csat.pct !== null 
-        ? `${monthAnalytics.csat.pct}%` 
+      const teamAvgCsat = monthAnalytics.csat.pct !== null
+        ? `${monthAnalytics.csat.pct}%`
         : (countCsat > 0 ? `${Math.round((sumCsat / countCsat) * 10) / 10}%` : "—");
 
-      const teamTotalLateness = monthAnalytics.lateness.totalMins > 0 
-        ? `${monthAnalytics.lateness.totalMins}` 
+      const teamTotalLateness = monthAnalytics.lateness.totalMins > 0
+        ? `${monthAnalytics.lateness.totalMins}`
         : `${Math.round(sumLateness)}`;
 
-      const teamTotalBreaches = monthAnalytics.breakBreach.breaches > 0 
-        ? `${monthAnalytics.breakBreach.breaches}` 
+      const teamTotalBreaches = monthAnalytics.breakBreach.breaches > 0
+        ? `${monthAnalytics.breakBreach.breaches}`
         : `${sumBreaches}`;
 
       // بناء نموذج العرض الجاهز summary.json (Serving Model)
@@ -2101,11 +2210,14 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
  * ============================================================================
  */
 function getOverviewData(targetMonth) {
+  return withDashboardReadContext_(() => getOverviewDataImpl_(targetMonth));
+}
+
+function getOverviewDataImpl_(targetMonth) {
   try {
     if (!requireAllowed()) {
       return { success: false, isEmpty: true, agents: [], summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 }, historicalDays: [], message: 'غير مصرح لك.' };
     }
-    const parentFolder = getOrCreateDataFolder();
     const monthsIndex = getMonthsIndex();
 
     let month = String(targetMonth || '').trim();
@@ -2118,13 +2230,13 @@ function getOverviewData(targetMonth) {
 
     // 1. فحص الكاش السريع لهذا الشهر (< 5ms)
     const cached = getCachedOverview(month);
-    if (cached && cached.agents && cached.agents.length > 0) {
+    if (cached && Array.isArray(cached.agents)) {
       if (!isSupportedSchema_(cached)) {
         return { success: false, isEmpty: true, code: ERR.CONSISTENCY_ERROR, month: month, currentMonth: monthsIndex.currentMonth, availableMonths: monthsIndex.availableMonths, agents: [], summary: { totalAgents: 0, avgCsat: "—", totalLateness: "—", lastSync: "—", totalDrillRows: 0 }, historicalDays: [], message: 'إصدار بيانات غير مدعوم.' };
       }
       return {
         success: true,
-        isEmpty: false,
+        isEmpty: cached.agents.length === 0,
         month: month,
         currentMonth: monthsIndex.currentMonth,
         availableMonths: monthsIndex.availableMonths,
@@ -2136,6 +2248,7 @@ function getOverviewData(targetMonth) {
     }
 
     // 2. قراءة ملف summary.json من مجلد الشهر المخصص [month]/
+    const parentFolder = getOrCreateDataFolder();
     let summaryContent = null;
     const mFolder = getMonthFolder(parentFolder, month, false);
     if (mFolder) {
@@ -2146,7 +2259,7 @@ function getOverviewData(targetMonth) {
     }
 
     // 3. إذا لم يتم العثور على مجلد الشهر، الرجوع لملف summary_overview.json القديم (Fallback)
-    if (!summaryContent) {
+    if (!summaryContent && month === (monthsIndex.currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM'))) {
       const legacyFiles = parentFolder.getFilesByName(CONFIG.LEGACY_SUMMARY_FILE_NAME || "summary_overview.json");
       if (legacyFiles.hasNext()) {
         summaryContent = legacyFiles.next().getBlob().getDataAsString();
@@ -2209,6 +2322,10 @@ function getOverviewData(targetMonth) {
  * ============================================================================
  */
 function getAgentDetailData(email, metric, targetMonth) {
+  return withDashboardReadContext_(() => getAgentDetailDataImpl_(email, metric, targetMonth));
+}
+
+function getAgentDetailDataImpl_(email, metric, targetMonth) {
   try {
     if (!requireAllowed()) {
       return { success: false, found: false, isAllAgents: false, email: email, metric: (metric || 'csat').trim().toLowerCase(), header: [], rows: [], count: 0, message: 'غير مصرح لك.' };
@@ -2239,6 +2356,9 @@ function getAgentDetailData(email, metric, targetMonth) {
     const fileName = getAgentMetricFileSlug(email, targetMetric) + ".json";
 
     let month = String(targetMonth || '').trim();
+    if (month && month.toLowerCase() !== 'current' && !isValidMonthFormat(month)) {
+      return { success: false, code: ERR.INVALID_MONTH, message: 'صيغة الشهر غير صالحة (المطلوب YYYY-MM).', found: false, header: [], rows: [] };
+    }
     if (!month || month.toLowerCase() === 'current') {
       const idx = getMonthsIndex();
       month = idx.currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM');
@@ -2259,7 +2379,7 @@ function getAgentDetailData(email, metric, targetMonth) {
     }
 
     // ب. إذا لم يوجد (fallback للملفات السابقة قبل الترحيل)، القراءة من مجلد drills/ القديم
-    if (!content) {
+    if (!content && month === (getMonthsIndex().currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM'))) {
       const legacyDrills = getOrCreateDrillsFolder();
       const legacyFiles = legacyDrills.getFilesByName(fileName);
       if (legacyFiles.hasNext()) {
@@ -2282,7 +2402,9 @@ function getAgentDetailData(email, metric, targetMonth) {
       };
     }
 
-    const drill = JSON.parse(content);
+    const storedDrill = JSON.parse(content);
+    const drill = Object.assign({}, storedDrill, normalizeRecord(
+      Object.assign({}, storedDrill, { agent: email, metric: targetMetric }), 0, fileName));
 
     return {
       success: true,
@@ -2564,6 +2686,10 @@ function getTargetSpreadsheet() {
 
 // دوال التوافق التي تستدعيها الواجهة الأمامية
 function getDashboardDataFromSheet(targetMonth) {
+  return withDashboardReadContext_(() => getDashboardDataFromSheetImpl_(targetMonth));
+}
+
+function getDashboardDataFromSheetImpl_(targetMonth) {
   const res = getOverviewData(targetMonth);
   if (res && res.success && Array.isArray(res.agents)) {
     const banned = getBannedAgentsSet();
@@ -2647,9 +2773,10 @@ function clearCachedAgentTimeline_(email, byShift, targetMonth) {
  * يقرأ سجلات المقاييس (drills) لوكيل محدد في شهر معين، مع الرجوع للمجلد القديم عند الحاجة.
  * دالة مشتركة بين الخط الزمني اليومي ومخطط المقارنة حسب الوكيل (لا تكرار للمنطق).
  */
-function readAgentRecordsForMonth(email, month, prebuiltIndex) {
+function readAgentRecordsForMonth(email, month, prebuiltIndex, metricFilter) {
   const prefix = getAgentFileSlug(email) + '_';
   const records = [];
+  const filterNeedle = metricFilter ? String(metricFilter).toLowerCase().trim() : null;
 
   // مسار مُحسّن: فهرس مُبنى بتعداد واحد لمجلد الشهر (يمنع Folder Scan لكل وكيل)
   if (prebuiltIndex && prebuiltIndex.filesBySlug) {
@@ -2657,10 +2784,11 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex) {
     files.forEach(f => {
       const name = f.getName();
       if (name.indexOf(prefix) !== 0) return;
+      if (filterNeedle && !name.toLowerCase().includes(filterNeedle)) return;
       try {
         const content = f.getBlob().getDataAsString();
         if (content && content.trim()) records.push(normalizeRecord(JSON.parse(content), 0, name));
-      } catch (e) {}
+      } catch (e) { throw e; }
     });
     // إن لم نجد سجلات في الفهرس (مثلاً بيانات الشهر الحالي في legacy) نكمل للمسار العادي مع fallback
     if (records.length > 0) return records;
@@ -2678,12 +2806,13 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex) {
         const f = files.next();
         const name = f.getName();
         if (!name.endsWith('.json') || name.indexOf(prefix) !== 0) continue;
+        if (filterNeedle && !name.toLowerCase().includes(filterNeedle)) continue;
         try {
           const content = f.getBlob().getDataAsString();
           if (content && content.trim()) {
             records.push(normalizeRecord(JSON.parse(content), 0, name));
           }
-        } catch (e) {}
+        } catch (e) { throw e; }
       }
     }
   }
@@ -2714,7 +2843,7 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex) {
           if (content && content.trim()) {
             records.push(normalizeRecord(JSON.parse(content), 0, name));
           }
-        } catch (e) {}
+        } catch (e) { throw e; }
       }
     }
   }
@@ -2750,7 +2879,11 @@ function enumerateMonthDrills_(month) {
   return { filesBySlug: filesBySlug };
 }
 
-function getAgentDailyTimeline(email, byShift, shiftStartHour, shiftEndHour, targetMonth, prebuiltIndex) {
+function getAgentDailyTimeline(email, byShift, shiftStartHour, shiftEndHour, targetMonth, prebuiltIndex, metricFilter) {
+  return withDashboardReadContext_(() => getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour, targetMonth, prebuiltIndex, metricFilter));
+}
+
+function getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour, targetMonth, prebuiltIndex, metricFilter) {
   try {
     if (!requireAllowed()) {
       return { success: false, email: email, days: [], message: 'غير مصرح لك.' };
@@ -2774,15 +2907,15 @@ function getAgentDailyTimeline(email, byShift, shiftStartHour, shiftEndHour, tar
       month = idx.currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM');
     }
 
-    // كاش وضع "حسب اليوم" فقط
-    if (!byShift) {
+    // كاش وضع "حسب اليوم" فقط (عند عدم وجود فلتر مقياس جزئي)
+    if (!byShift && !metricFilter) {
       const cached = getCachedAgentTimeline(email, false, month);
       if (cached) {
         return { success: true, email: email, days: cached, month: month };
       }
     }
 
-    const records = readAgentRecordsForMonth(email, month, prebuiltIndex);
+    const records = readAgentRecordsForMonth(email, month, prebuiltIndex, metricFilter);
 
     if (records.length === 0) {
       return { success: true, email: email, days: [], month: month };
@@ -2792,7 +2925,7 @@ function getAgentDailyTimeline(email, byShift, shiftStartHour, shiftEndHour, tar
     if (!byShift) {
       const analytics = calculateAnalytics(records, null, 0, null);
       const days = Array.isArray(analytics.timeline) ? analytics.timeline : [];
-      setCachedAgentTimeline_(email, days, false, month);
+      if (!metricFilter) setCachedAgentTimeline_(email, days, false, month);
       return { success: true, email: email, days: days, month: month };
     }
 
@@ -2867,6 +3000,10 @@ function clearCachedAgentsChart_() {
 }
 
 function getAgentsChartData(metric, startDay, endDay, targetMonth) {
+  return withDashboardReadContext_(() => getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth));
+}
+
+function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
   try {
     if (!isCurrentUserAllowed()) {
       return { success: false, agents: [], metric: metric, message: 'غير مصرح لك.' };
@@ -2890,7 +3027,9 @@ function getAgentsChartData(metric, startDay, endDay, targetMonth) {
       month = idx.currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM');
     }
 
-    const cacheKey = 'CHART_AGENTS_' + getAgentsChartCacheVersion() + '_' + m + '_' + month + '_' + (start || 'all') + '_' + (end || 'all');
+    const cacheVersion = getAgentsChartCacheVersion();
+    const chartCacheKey = key => 'CHART_AGENTS_' + cacheVersion + '_' + key + '_' + month + '_' + (start || 'all') + '_' + (end || 'all');
+    const cacheKey = chartCacheKey(m);
     try {
       const cachedRaw = CacheService.getScriptCache().get(cacheKey);
       if (cachedRaw) {
@@ -2900,6 +3039,10 @@ function getAgentsChartData(metric, startDay, endDay, targetMonth) {
     } catch (e) {}
 
     const overview = getOverviewData(month);
+    if (!overview || overview.success === false) {
+      return { success: false, agents: [], metric: m, code: overview && overview.code,
+        message: (overview && overview.message) || 'تعذر تحميل ملخص الشهر.' };
+    }
     const banned = getBannedAgentsSet();
     const agents = (overview && Array.isArray(overview.agents) ? overview.agents : [])
       .filter(a => !banned.has(String(a.email || '').toLowerCase().trim()));
@@ -2907,12 +3050,15 @@ function getAgentsChartData(metric, startDay, endDay, targetMonth) {
     // تعداد واحد لمجلد drills للشهر ثم معالجة الوكلاء من الفهرس (يمنع N+1 Folder Scans)
     const drillsIndex = enumerateMonthDrills_(month);
 
-    const result = [];
+    // calculateAnalytics already computes every metric: reuse this one Drive pass
+    // for all metric tabs instead of reopening the same files for each tab.
+    const resultsByMetric = {};
+    CHART_METRIC_KEYS.forEach(key => { resultsByMetric[key] = []; });
     for (const a of agents) {
       const email = String(a.email || '').trim();
       if (!email) continue;
       let records = [];
-      try { records = readAgentRecordsForMonth(email, month, drillsIndex); } catch (e) { records = []; }
+      records = readAgentRecordsForMonth(email, month, drillsIndex);
       if (start || end) records = filterRecordsToDateRange(records, start, end);
       const analytics = calculateAnalytics(records);
       let stat = analytics.agentStats[email];
@@ -2920,19 +3066,20 @@ function getAgentsChartData(metric, startDay, endDay, targetMonth) {
         const k = Object.keys(analytics.agentStats).find(k => k.toLowerCase() === email.toLowerCase());
         if (k) stat = analytics.agentStats[k];
       }
-      const value = getAgentMetricValue(stat, m);
-      const entry = { email: email, name: a.name || email, value: value };
-      // معلومة إضافية لمقياس البريك: عدد المرات (الأساسي يبقى الدقائق)
-      if (m === 'breakBreach') entry.breaches = (stat && stat.breakBreaches) || 0;
-      result.push(entry);
+      CHART_METRIC_KEYS.forEach(key => {
+        const entry = { email: email, name: a.name || email, value: getAgentMetricValue(stat, key) };
+        if (key === 'breakBreach') entry.breaches = (stat && stat.breakBreaches) || 0;
+        resultsByMetric[key].push(entry);
+      });
     }
 
     // ترتيب تنازلي حسب القيمة (القيم الفارغة في النهاية)
-    result.sort((x, y) => {
+    CHART_METRIC_KEYS.forEach(key => resultsByMetric[key].sort((x, y) => {
       const vx = (x.value === null || x.value === undefined) ? -Infinity : Number(x.value);
       const vy = (y.value === null || y.value === undefined) ? -Infinity : Number(y.value);
       return vy - vx;
-    });
+    }));
+    const result = resultsByMetric[m];
 
     const data = {
       success: true,
@@ -2944,8 +3091,11 @@ function getAgentsChartData(metric, startDay, endDay, targetMonth) {
       agents: result
     };
     try {
-      const json = JSON.stringify(data);
-      if (json.length < 90000) CacheService.getScriptCache().put(cacheKey, json, 600);
+      const cache = CacheService.getScriptCache();
+      CHART_METRIC_KEYS.forEach(key => {
+        const json = JSON.stringify(Object.assign({}, data, { metric: key, agents: resultsByMetric[key] }));
+        if (json.length < 90000) cache.put(chartCacheKey(key), json, 600);
+      });
     } catch (e) {}
     return data;
   } catch (err) {
@@ -2974,6 +3124,10 @@ function parseTimeValueToSeconds(v) {
 }
 
 function getAgentDrillPageFromSheet(email, metric, opts) {
+  return withDashboardReadContext_(() => getAgentDrillPageFromSheetImpl_(email, metric, opts));
+}
+
+function getAgentDrillPageFromSheetImpl_(email, metric, opts) {
   if (!requireAllowed()) {
     return { success: false, found: false, email: email, metric: (metric || 'csat').toLowerCase(), header: [], rows: [], total: 0, page: 0, pageSize: 50, totalPages: 1, count: 0, message: 'غير مصرح لك.' };
   }
@@ -2989,13 +3143,17 @@ function getAgentDrillPageFromSheet(email, metric, opts) {
   const targetMonth = opts.month || opts.targetMonth;
 
   const detail = getAgentDetailData(email, targetMetric, targetMonth);
+  if (!detail || detail.success === false) {
+    return { success: false, found: false, header: [], rows: [], code: detail && detail.code,
+      message: (detail && detail.message) || 'تعذر تحميل التفاصيل.' };
+  }
   if (!detail || !detail.found || !detail.rows || !detail.rows.length) {
     return {
       success: true,
       found: false,
       email: email,
       metric: targetMetric,
-      header: [],
+      header: detail && detail.header || [],
       rows: [],
       total: 0,
       page: 0,
@@ -3044,7 +3202,13 @@ function getAgentDrillPageFromSheet(email, metric, opts) {
 
     // فلتر القناة
     if (channel !== 'all' && chanIdx !== -1) {
-      if (String(row[chanIdx] || '').toLowerCase().trim() !== channel.toLowerCase()) return false;
+      const cellChan = String(row[chanIdx] || '').toLowerCase().trim();
+      const filterChan = channel.toLowerCase();
+      if (filterChan === 'phone') {
+        if (cellChan !== 'phone' && cellChan !== 'voice' && cellChan.indexOf('phone') === -1 && cellChan.indexOf('voice') === -1) return false;
+      } else if (cellChan !== filterChan) {
+        return false;
+      }
     }
 
     // فلتر التاريخ
@@ -3059,13 +3223,22 @@ function getAgentDrillPageFromSheet(email, metric, opts) {
     return true;
   });
 
-  // فلتر أعلى الجلسات (Top N) بعد الفرز التنازلي زمنياً
+  // فلتر أعلى الجلسات (Top N) بعد الفرز التنازلي زمنياً أو الجلسات الطويلة (20m+)
   if (topSessions !== 'all' && timeIdx !== -1) {
-    filtered.sort(function (a, b) {
-      return parseTimeValueToSeconds(b[timeIdx]) - parseTimeValueToSeconds(a[timeIdx]);
-    });
-    const n = topSessions === 'top5' ? 5 : 10;
-    filtered = filtered.slice(0, n);
+    if (topSessions === 'above20' || topSessions === '20m') {
+      filtered = filtered.filter(function (row) {
+        const secs = parseTimeValueToSeconds(row[timeIdx]);
+        if (secs >= 20 * 60) return true;
+        if (typeof isLongSessionRow_ === 'function' && isLongSessionRow_(row, header)) return true;
+        return false;
+      });
+    } else {
+      filtered.sort(function (a, b) {
+        return parseTimeValueToSeconds(b[timeIdx]) - parseTimeValueToSeconds(a[timeIdx]);
+      });
+      const n = topSessions === 'top5' ? 5 : 10;
+      filtered = filtered.slice(0, n);
+    }
   }
 
   // الترتيب العام على عمود محدد (يعمل فوق كل النتائج المفلترة)
@@ -3215,6 +3388,10 @@ function getSpreadsheetUrl() {
 const BANNED_FILE_NAME = "banned_agents.json";
 
 function getBannedAgentsSet() {
+  return memoDashboardRead_('banned', () => getBannedAgentsSetImpl_());
+}
+
+function getBannedAgentsSetImpl_() {
   try {
     const folder = getOrCreateDataFolder();
     const files = folder.getFilesByName(BANNED_FILE_NAME);
@@ -3326,6 +3503,10 @@ const ADMINS_FILE_NAME = "admin_emails.json";
 const PRIMARY_ADMIN_EMAIL = "sultan.alkharmani@tabby.sa";
 
 function getAdminEmailsSet() {
+  return memoDashboardRead_('admins', () => getAdminEmailsSetImpl_());
+}
+
+function getAdminEmailsSetImpl_() {
   const set = new Set();
   try {
     const folder = getOrCreateDataFolder();
@@ -3461,6 +3642,10 @@ function removeAdminEmail(email) {
 const ALLOWED_FILE_NAME = "allowed_emails.json";
 
 function getAllowedEmailsSet() {
+  return memoDashboardRead_('allowed', () => getAllowedEmailsSetImpl_());
+}
+
+function getAllowedEmailsSetImpl_() {
   const set = new Set();
   try {
     const folder = getOrCreateDataFolder();
@@ -3739,6 +3924,10 @@ function metricLabelForPeriod(m, lang) {
 }
 
 function getAgentsPeriodTable(metric, periodType, lang, targetMonth) {
+  return withDashboardReadContext_(() => getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth));
+}
+
+function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
   try {
     if (!requireAllowed()) {
       return { success: false, message: 'غير مصرح لك.', agents: [], periods: [] };
@@ -3762,6 +3951,10 @@ function getAgentsPeriodTable(metric, periodType, lang, targetMonth) {
     } catch (e) { /* تجاهل أخطاء الكاش */ }
 
     const overview = getDashboardDataFromSheet(targetMonth);
+    if (!overview || overview.success === false) {
+      return { success: false, agents: [], periods: [], code: overview && overview.code,
+        message: (overview && overview.message) || 'تعذر تحميل ملخص الشهر.' };
+    }
     const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
     const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods(lang, targetMonth);
 
@@ -3773,9 +3966,14 @@ function getAgentsPeriodTable(metric, periodType, lang, targetMonth) {
     }
     const drillsIndex = enumerateMonthDrills_(indexMonth);
 
+    const metricFilter = (m === 'csat') ? 'csat' : ((m === 'abst' || m === 'sessions') ? 'abst' : null);
     const rows = [];
     for (const a of agents) {
-      const tl = getAgentDailyTimeline(a.email, false, null, null, targetMonth, drillsIndex);
+      const tl = getAgentDailyTimeline(a.email, false, null, null, targetMonth, drillsIndex, metricFilter);
+      if (!tl || tl.success === false) {
+        return { success: false, agents: [], periods: [], code: tl && tl.code,
+          message: (tl && (tl.message || tl.error)) || 'تعذر تحميل بيانات الوكيل.' };
+      }
       const days = (tl && Array.isArray(tl.days)) ? tl.days : [];
       const agg = {};
       for (const d of days) {
@@ -3805,10 +4003,10 @@ function getAgentsPeriodTable(metric, periodType, lang, targetMonth) {
       agents: rows
     };
 
-    // حفظ النتيجة في الكاش لمدة 10 دقائق للاسترداد السريع
+    // حفظ النتيجة في الكاش لمدة 30 دقيقة للاسترداد السريع
     try {
       const json = JSON.stringify(result);
-      if (json.length < 90000) CacheService.getScriptCache().put(cacheKey, json, 600);
+      if (json.length < 100000) CacheService.getScriptCache().put(cacheKey, json, 1800);
     } catch (e) { /* تجاهل */ }
 
     return result;

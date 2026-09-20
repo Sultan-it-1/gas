@@ -195,8 +195,10 @@
                 filterPhone: 'Phone',
                 filterEmail: 'Email',
                 filterAllSessions: 'All Sessions',
+                filterSessionsAbove20: 'Sessions 20m+ (Long) ⏳',
                 filterTop5: 'Top 5 Longest Sessions',
                 filterTop10: 'Top 10 Longest Sessions',
+                drillFilterAbove20: '20m+ Only ⏳',
                 
                 // Summary Bar
                 totalAgentsLabel: 'Total Agents:',
@@ -298,8 +300,19 @@
                 csatDistributionSub: 'Agents reaching target (90%+):',
                 csatNote: '* Calculated from active Daily_Summary records synced from the extension.',
                 agentRankingsTitle: 'Agent Performance Rankings',
-                satisfiedLabel: 'Satisfied Customers (Good 4-5★)',
-                unsatisfiedLabel: 'Unsatisfied Customers (Bad 1-3★)',
+                satisfiedLabel: 'Satisfied Customers',
+                unsatisfiedLabel: 'Unsatisfied Customers',
+                rankUp: '▲ +{n}',
+                rankDown: '▼ {n}',
+                rankSame: '—',
+                rankNew: '⭐ NEW',
+                tieBreakHint: 'Tie-break by CSAT evaluations count',
+                tieBreakBadge: '⚖️ {count} CSATs',
+                weeklySearchPlaceholder: 'Filter agents in weekly table...',
+                monthlySearchPlaceholder: 'Filter agents in monthly table...',
+                showingAllAgents: 'Showing all {count} agents',
+                unitEvaluations: 'evals',
+                unitCsats: 'CSATs',
                 
                 // Status Pills
                 statusExcellent: 'Excellent 🟢',
@@ -398,6 +411,7 @@
                 adminRemoved: '✅ Removed.',
                 adminFailed: 'Failed.',
                 adminPreviewValid: 'Valid format ready ✓',
+                adminLoadSample: '📂 Load Sample Data',
                 adminPreviewInvalid: 'Invalid JSON structure ❌',
                 adminNeedPaste: '⚠️ Please paste the JSON code first in the box above.',
                 adminInvalidJson: '⚠️ The pasted text is not valid JSON. Please re-copy the results from the extension.',
@@ -538,8 +552,10 @@
                 filterPhone: 'هاتف (Phone)',
                 filterEmail: 'بريد إلكتروني (Email)',
                 filterAllSessions: 'جميع الجلسات',
+                filterSessionsAbove20: 'جلسات 20 دقيقة وفوق ⏳',
                 filterTop5: 'أعلى 5 جلسات استغراقاً',
                 filterTop10: 'أعلى 10 جلسات',
+                drillFilterAbove20: 'جلسات 20د وفوق فقط ⏳',
                 
                 // Summary Bar
                 totalAgentsLabel: 'إجمالي الوكلاء:',
@@ -641,8 +657,19 @@
                 csatDistributionSub: 'نسبة الوكلاء المحققين للهدف (90%+):',
                 csatNote: '* يتم احتساب المتوسطات بناءً على أحدث بيانات مسجلة في شيت Daily_Summary ومحدثة من الإضافة.',
                 agentRankingsTitle: 'ترتيب أداء الوكلاء (Agent Rankings)',
-                satisfiedLabel: 'عملاء راضون (Good 4-5★)',
-                unsatisfiedLabel: 'عملاء غير راضين (Bad 1-3★)',
+                satisfiedLabel: 'عملاء راضون',
+                unsatisfiedLabel: 'عملاء غير راضين',
+                rankUp: '▲ +{n}',
+                rankDown: '▼ {n}',
+                rankSame: '—',
+                rankNew: '⭐ جديد',
+                tieBreakHint: 'مفاضلة بعدد تقييمات CSAT',
+                tieBreakBadge: '⚖️ {count} تقييم',
+                weeklySearchPlaceholder: 'فلترة الوكلاء في جدول الأسبوعي...',
+                monthlySearchPlaceholder: 'فلترة الوكلاء في جدول الشهري...',
+                showingAllAgents: 'عرض جميع الوكلاء ({count} وكيل)',
+                unitEvaluations: 'تقييم',
+                unitCsats: 'تقييم CSAT',
                 
                 // Status Pills
                 statusExcellent: 'ممتاز 🟢',
@@ -740,6 +767,7 @@
                 adminRemoved: '✅ تمت الإزالة.',
                 adminFailed: 'تعذر.',
                 adminPreviewValid: 'صيغة صحيحة وجاهزة ✓',
+                adminLoadSample: '📂 تحميل بيانات تجريبية',
                 adminPreviewInvalid: 'خطأ في بنية JSON ❌',
                 adminNeedPaste: '⚠️ يرجى لصق كود الـ JSON أولاً في المربع أعلاه.',
                 adminInvalidJson: '⚠️ النص الملصق ليس كود JSON صالح. يرجى إعادة نسخ النتائج من الإضافة.',
@@ -887,6 +915,18 @@
         drillSearchTimer: null,
         analyticsLoading: false,
         analyticsRequestId: 0,
+        sheetRequestId: 0,
+        sheetLoading: false,
+        sheetLoadMonth: null,
+        drillRequestId: 0,
+        drillError: '',
+        analyticsError: '',
+        analyticsLoadKey: '',
+        analyticsLoadedAt: 0,
+        agentChartError: '',
+        agentChartPendingKey: '',
+        agentChartLoadedAt: 0,
+        periodRequestIds: {},
         detailFilters: {
             datePreset: 'all',
             csatScore: 'all',
@@ -895,6 +935,108 @@
             breachOnly: 'all'
         }
     };
+
+    // Page-memory only: coalesce identical reads, expire results, and bound memory.
+    // Writes deliberately keep using google.script.run directly.
+    const DashboardReads = { pending: new Map(), cache: new Map(), generation: 0, ttl: 30000 };
+
+    function dashboardReadRunner_() {
+        let success = () => {};
+        let failure = err => message(loadErrorText_(err), true);
+        const runner = {
+            withSuccessHandler(fn) { success = fn; return runner; },
+            withFailureHandler(fn) { failure = fn; return runner; }
+        };
+        ['getDashboardDataFromSheet', 'getAgentsPeriodTable', 'getAgentDailyTimeline',
+            'getAgentsChartData', 'getAgentDrillPageFromSheet', 'getAgentChartDrilldown',
+            'getAgbtTicketAttribution', 'getAgbtTicketDetails'].forEach(method => {
+            runner[method] = (...args) => dashboardRead_(method, args, success, failure);
+        });
+        return runner;
+    }
+
+    function dashboardRead_(method, args, success, failure) {
+        const key = JSON.stringify([DashboardReads.generation, method, args]);
+        const cached = DashboardReads.cache.get(key);
+        if (cached && Date.now() - cached.at < DashboardReads.ttl) {
+            const generation = DashboardReads.generation;
+            Promise.resolve().then(() => {
+                if (generation === DashboardReads.generation) success(JSON.parse(cached.json));
+            }).catch(failure);
+            return;
+        }
+        DashboardReads.cache.delete(key);
+        const waiting = DashboardReads.pending.get(key);
+        if (waiting) { waiting.listeners.push({ success, failure }); return; }
+        const entry = { listeners: [{ success, failure }], generation: DashboardReads.generation };
+        DashboardReads.pending.set(key, entry);
+        let settled = false;
+        const finish = (err, result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            DashboardReads.pending.delete(key);
+            if (!err && (!result || result.success !== true)) {
+                err = { message: result && (result.message || result.error), code: result && result.code };
+            }
+            const fields = { getDashboardDataFromSheet: ['agents'], getAgentsPeriodTable: ['agents', 'periods'],
+                getAgentDailyTimeline: ['days'], getAgentsChartData: ['agents'], getAgentDrillPageFromSheet: ['rows', 'header'] };
+            if (!err && (fields[method] || []).some(field => !Array.isArray(result[field]))) {
+                err = { code: 'INVALID_RESPONSE' };
+            }
+            if (!err && entry.generation === DashboardReads.generation) {
+                try {
+                    const json = JSON.stringify(result);
+                    if (json.length <= 300000) {
+                        DashboardReads.cache.set(key, { json, at: Date.now() });
+                        while (DashboardReads.cache.size > 20) DashboardReads.cache.delete(DashboardReads.cache.keys().next().value);
+                    }
+                } catch (e) { /* Cache failure must not fail a successful read. */ }
+            }
+            entry.listeners.forEach(listener => {
+                try { if (err) listener.failure(err); else listener.success(result); }
+                catch (e) { console.error('Dashboard render failed:', e); }
+            });
+        };
+        // A late RPC cannot replace a timed-out result or leave a spinner forever.
+        const timer = setTimeout(() => finish({ code: 'READ_TIMEOUT', message: I18N.currentLang === 'ar'
+            ? 'استغرق التحميل وقتًا أطول من المتوقع. أعد المحاولة من زر التحديث.'
+            : 'Loading took too long. Use Refresh to try again.' }), 60000);
+        entry.cancel = () => { settled = true; clearTimeout(timer); entry.listeners = []; };
+        try {
+            google.script.run.withSuccessHandler(res => finish(null, res))
+                .withFailureHandler(err => finish(err || {}))[method](...args);
+        } catch (err) { finish(err); }
+    }
+
+    function loadErrorText_(err) {
+        const detail = err && (err.message || err.error);
+        return I18N.t('loadFailed') + (detail || (I18N.currentLang === 'ar'
+            ? 'تعذر تحميل البيانات. أعد المحاولة من زر التحديث.' : 'Unable to load data. Use Refresh to retry.'));
+    }
+
+    function invalidateDashboardReads_() {
+        DashboardReads.generation++;
+        DashboardReads.cache.clear();
+        DashboardReads.pending.forEach(entry => entry.cancel());
+        DashboardReads.pending.clear();
+        AppState.drillRequestId++;
+        AppState.analyticsRequestId++;
+        AppState.agentChartRequestId++;
+        AppState.drilldownRequestId++;
+        AppState.periodRequestIds.weekly = (AppState.periodRequestIds.weekly || 0) + 1;
+        AppState.periodRequestIds.monthly = (AppState.periodRequestIds.monthly || 0) + 1;
+        AppState.analyticsLoadKey = '';
+        AppState.analyticsLoadedAt = 0;
+        AppState.agentChartKey = '';
+        AppState.agentChartPendingKey = '';
+        AppState.agentChartLoadedAt = 0;
+        AppState.drillLoading = AppState.analyticsLoading = AppState.agentChartLoading = false;
+        AppState.drillError = AppState.analyticsError = AppState.agentChartError = '';
+        if (AppState.drilldownOpen) closeChartDrilldown();
+        const ticketOverlay = el('agbtDetailsOverlay');
+        if (ticketOverlay) ticketOverlay.remove();
+    }
 
     /**
      * احتساب درجة ترتيب الحالة للمقاييس الفردية
@@ -1098,8 +1240,6 @@
             AppState.agentChartKey = '';
             AppState.page = 0;
             loadSheetData();
-            if (AppState.currentMainTab === 'weekly') loadPeriodTable('weekly');
-            if (AppState.currentMainTab === 'monthly') loadPeriodTable('monthly');
         });
     }
 
@@ -1140,11 +1280,28 @@
 
         tabs.forEach(t => t.btn.addEventListener('click', () => activate(t.name)));
 
-        // منتقي المقياس لجداول الأسبوعي/الشهري
+        // منتقي المقياس وحقول البحث لجداول الأسبوعي/الشهري
         const weeklySel = el('weeklyMetricSelect');
         const monthlySel = el('monthlyMetricSelect');
         if (weeklySel) weeklySel.addEventListener('change', () => loadPeriodTable('weekly'));
         if (monthlySel) monthlySel.addEventListener('change', () => loadPeriodTable('monthly'));
+
+        const weeklySearch = el('weeklySearch');
+        const monthlySearch = el('monthlySearch');
+        if (weeklySearch) {
+            weeklySearch.addEventListener('input', () => {
+                if (AppState.periodData && AppState.periodData['weekly']) {
+                    renderPeriodTable(AppState.periodData['weekly'], 'weekly');
+                }
+            });
+        }
+        if (monthlySearch) {
+            monthlySearch.addEventListener('input', () => {
+                if (AppState.periodData && AppState.periodData['monthly']) {
+                    renderPeriodTable(AppState.periodData['monthly'], 'monthly');
+                }
+            });
+        }
     }
 
     // ============ جداول الأسبوعي / الشهري (Weekly / Monthly Pivot) ============
@@ -1155,6 +1312,9 @@
     }
 
     function loadPeriodTable(periodType) {
+        if (AppState.sheetLoading) return;
+        const requestId = (AppState.periodRequestIds[periodType] || 0) + 1;
+        AppState.periodRequestIds[periodType] = requestId;
         const metricSelect = el(periodType === 'weekly' ? 'weeklyMetricSelect' : 'monthlyMetricSelect');
         const tableEl = el(periodType === 'weekly' ? 'weeklyTable' : 'monthlyTable');
         const emptyEl = el(periodType === 'weekly' ? 'weeklyEmpty' : 'monthlyEmpty');
@@ -1164,15 +1324,20 @@
         if (emptyEl) emptyEl.hidden = true;
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
-                .withSuccessHandler(res => renderPeriodTable(res, periodType))
+            dashboardReadRunner_()
+                .withSuccessHandler(res => {
+                    if (requestId !== AppState.periodRequestIds[periodType]) return;
+                    renderPeriodTable(res, periodType);
+                })
                 .withFailureHandler(err => {
-                    if (tableEl) tableEl.innerHTML = '<tbody><tr><td colspan="100%" class="period-cell empty" style="padding:28px 20px; text-align:center; color:#f87171;">❌ ' + escPeriod(err.message) + '</td></tr></tbody>';
+                    if (requestId !== AppState.periodRequestIds[periodType]) return;
+                    if (tableEl) tableEl.innerHTML = '<tbody><tr><td colspan="100%" class="period-cell empty" style="padding:28px 20px; text-align:center; color:var(--danger);">' + escPeriod(loadErrorText_(err)) + '</td></tr></tbody>';
                 })
                 .getAgentsPeriodTable(metric, periodType, I18N.currentLang, AppState.selectedMonth || '');
         } else {
             // وضع المعاينة المحلي: محاكاة فورية لبيانات حقيقية أنيقة
             setTimeout(() => {
+                if (requestId !== AppState.periodRequestIds[periodType]) return;
                 const mockRes = getMockPeriodTableData(periodType, metric);
                 renderPeriodTable(mockRes, periodType);
             }, 100);
@@ -1191,25 +1356,41 @@
         const emptyEl = el(periodType === 'weekly' ? 'weeklyEmpty' : 'monthlyEmpty');
         if (!tableEl) return;
 
-        const agents = (res && Array.isArray(res.agents)) ? res.agents : [];
+        AppState.periodData = AppState.periodData || {};
+        AppState.periodData[periodType] = res;
+
+        const allAgents = (res && Array.isArray(res.agents)) ? res.agents : [];
         const periods = (res && Array.isArray(res.periods)) ? res.periods : [];
         const metric = (res && res.metric) || 'csat';
 
-        if (!agents.length || !periods.length) {
+        const searchInput = el(periodType === 'weekly' ? 'weeklySearch' : 'monthlySearch');
+        const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+        const agents = query
+            ? allAgents.filter(a => (a.name || '').toLowerCase().includes(query) || (a.email || '').toLowerCase().includes(query))
+            : allAgents;
+
+        if (!allAgents.length || !periods.length) {
             tableEl.innerHTML = '';
             if (emptyEl) emptyEl.hidden = false;
             return;
         }
         if (emptyEl) emptyEl.hidden = true;
 
-        let html = '<thead><tr><th class="period-agent-col">' + I18N.t('periodAgentCol') + '</th>';
+        if (!agents.length) {
+            tableEl.innerHTML = '<tbody><tr><td colspan="100%" class="period-cell empty" style="padding:28px 20px; text-align:center; font-size:13px; color:var(--muted);">' + I18N.t('noMatchingRows') + '</td></tr></tbody>';
+            return;
+        }
+
+        let html = '<thead><tr><th class="period-agent-col">' + I18N.t('periodAgentCol') + ' (' + agents.length + ')</th>';
         periods.forEach(p => {
             html += '<th>' + escPeriod(p.label) + (p.range ? '<small>(' + escPeriod(p.range) + ')</small>' : '') + '</th>';
         });
         html += '</tr></thead><tbody>';
 
         agents.forEach(a => {
-            html += '<tr><td class="period-agent-col" dir="auto">' + escPeriod(a.name || a.email) + '</td>';
+            const emailAttr = escPeriod(a.email || '');
+            html += '<tr><td class="period-agent-col" dir="auto"><button type="button" class="agent-name-link" data-email="' + emailAttr + '" style="font-weight:600;">' + escPeriod(a.name || a.email) + '</button></td>';
             periods.forEach(p => {
                 const v = (a.values && a.values[p.key] !== undefined) ? a.values[p.key] : null;
                 html += periodCellHtml(v, metric);
@@ -1218,6 +1399,14 @@
         });
         html += '</tbody>';
         tableEl.innerHTML = html;
+
+        // تفعيل النقر على اسم الوكيل لفتح تفاصيله
+        tableEl.querySelectorAll('.agent-name-link').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const em = e.currentTarget.getAttribute('data-email');
+                if (em) selectAgent(em);
+            });
+        });
     }
 
     function periodCellHtml(v, metric) {
@@ -2105,6 +2294,21 @@
             });
         }
 
+        const btnLoadSample = el('adminBtnLoadSample');
+        if (btnLoadSample) {
+            btnLoadSample.addEventListener('click', () => {
+                if (typeof window !== 'undefined' && window.__LOCAL_PREVIEW_SAMPLE_DATASET__) {
+                    if (jsonInput) {
+                        jsonInput.value = JSON.stringify(window.__LOCAL_PREVIEW_SAMPLE_DATASET__, null, 2);
+                        analyzeInput();
+                    }
+                    showAdminStatus('info', I18N.currentLang === 'ar' ? '✅ تم تحميل البيانات التجريبية! اضغط "حفظ واستيراد" للاعتماد فوراً.' : '✅ Sample dataset loaded! Click Save & Import to apply.');
+                } else {
+                    alert(I18N.currentLang === 'ar' ? 'ملف البيانات التجريبية متوفر في مجلد sample-data/' : 'Sample data is available in sample-data/ folder');
+                }
+            });
+        }
+
         if (btnClear) {
             btnClear.addEventListener('click', () => {
                 if (jsonInput) jsonInput.value = '';
@@ -2226,8 +2430,18 @@
                         try {
                             const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
                             const localData = buildLocalDashboardData(parsed);
-                            localStorage.setItem('gas_agent_dashboard_local_data', JSON.stringify(localData));
-                            localStorage.setItem('gas_agent_dashboard_raw_json', text);
+                            try {
+                                localStorage.setItem('gas_agent_dashboard_local_data', JSON.stringify(localData));
+                            } catch (e) {
+                                console.warn('Could not cache localData in localStorage:', e);
+                            }
+                            try {
+                                localStorage.setItem('gas_agent_dashboard_raw_json', text);
+                            } catch (e) {
+                                console.warn('Large dataset (>5MB) exceeded localStorage quota, storing in memory for preview:', e);
+                            }
+                            window.__RAW_JSON_IN_MEMORY__ = text;
+                            window.__LOCAL_DASHBOARD_DATA_MEM__ = localData;
                             btnSave.disabled = false;
                             showAdminStatus('success', I18N.t('adminLocalSaveSuccess', { agents: localData.agents.length, rows: localData.summary.totalDrillRows }));
                             setTimeout(loadLocalPreviewMode, 400);
@@ -2270,35 +2484,78 @@
     }
 
     function loadSheetData() {
+        const month = AppState.selectedMonth || '';
+        if (AppState.sheetLoading && AppState.sheetLoadMonth === month) return;
+        const changedMonth = AppState.sheetLoadMonth !== null && AppState.sheetLoadMonth !== month;
+        const requestId = ++AppState.sheetRequestId;
+        invalidateDashboardReads_();
+        AppState.sheetLoading = true;
+        AppState.sheetLoadMonth = month;
+        if (changedMonth) {
+            AppState.agents = [];
+            AppState.historicalDays = [];
+            AppState.chartDays = [];
+            AppState.activeDrillData = null;
+            if (el('detail')) el('detail').hidden = true;
+            if (el('analyticsContent')) el('analyticsContent').hidden = true;
+            ['weeklyTable', 'monthlyTable'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
+        }
+        const refresh = el('btnRefreshSheet');
+        if (refresh) { refresh.disabled = true; refresh.setAttribute('aria-busy', 'true'); }
         const label = el('cloudStatusLabel');
         if (label) label.textContent = I18N.t('cloudUpdating');
         message(I18N.t('cloudUpdating'));
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
-                .withSuccessHandler(handleSheetDataSuccess)
-                .withFailureHandler(handleSheetDataError)
-                .getDashboardDataFromSheet(AppState.selectedMonth);
+            dashboardReadRunner_()
+                .withSuccessHandler(res => {
+                    if (requestId !== AppState.sheetRequestId) return;
+                    handleSheetDataSuccess(res);
+                })
+                .withFailureHandler(err => {
+                    if (requestId !== AppState.sheetRequestId) return;
+                    handleSheetDataError(err);
+                })
+                .getDashboardDataFromSheet(month);
         } else {
             // وضع المعاينة المحلي (Local Preview Mode)
-            setTimeout(loadLocalPreviewMode, 400);
+            setTimeout(() => { if (requestId === AppState.sheetRequestId) loadLocalPreviewMode(); }, 0);
         }
     }
 
     function handleSheetDataSuccess(response) {
+        if (!response || response.success !== true || !Array.isArray(response.agents)) {
+            handleSheetDataError(response);
+            return;
+        }
+        AppState.sheetLoading = false;
+        const refresh = el('btnRefreshSheet');
+        if (refresh) { refresh.disabled = false; refresh.removeAttribute('aria-busy'); }
         const label = el('cloudStatusLabel');
         if (label) label.textContent = I18N.t('cloudRefresh');
 
         if (response && Array.isArray(response.availableMonths)) {
             AppState.availableMonths = response.availableMonths;
         }
-        if (response && response.selectedMonth) {
-            AppState.selectedMonth = response.selectedMonth;
+        if (response.selectedMonth || response.month) {
+            AppState.selectedMonth = response.selectedMonth || response.month;
         }
+        AppState.sheetLoadMonth = AppState.selectedMonth || '';
+        AppState.historicalDays = Array.isArray(response.historicalDays) ? response.historicalDays : [];
+        AppState.chartDays = AppState.historicalDays;
         renderMonthOptions(AppState.availableMonths, AppState.selectedMonth);
 
         if (!response || !response.success || response.isEmpty || !response.agents || response.agents.length === 0) {
             AppState.agents = [];
+            AppState.agentTabs = [];
+            AppState.selectedAgent = '';
+            AppState.activeTabId = 'all';
+            AppState.activeDrillData = null;
+            AppState.chartDays = AppState.historicalDays = [];
+            renderAgentTabs();
+            populateDropdowns();
+            if (el('analyticsContent')) el('analyticsContent').hidden = true;
+            ['weeklyTable', 'monthlyTable'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
             el('empty').hidden = false;
             el('detail').hidden = true;
             updateTopStats({ totalAgents: 0, totalDrillRows: 0 });
@@ -2335,12 +2592,18 @@
 
         // Auto-Setup لمرة واحدة للمستخدم الحالي إن كان وكيلاً (يعمل فقط بعد جهوزية الوكلاء/التبويبات)
         autoSetupForLoggedInAgentOnce();
+        if (AppState.currentMainTab === 'stats') renderAnalyticsView();
+        if (AppState.currentMainTab === 'weekly') loadPeriodTable('weekly');
+        if (AppState.currentMainTab === 'monthly') loadPeriodTable('monthly');
     }
 
     function handleSheetDataError(err) {
+        AppState.sheetLoading = false;
+        const refresh = el('btnRefreshSheet');
+        if (refresh) { refresh.disabled = false; refresh.removeAttribute('aria-busy'); }
         const label = el('cloudStatusLabel');
         if (label) label.textContent = I18N.t('cloudRefresh');
-        message(I18N.t('loadFailed') + err.message, true);
+        message(loadErrorText_(err), true);
     }
 
     function updateTopStats(summary) {
@@ -2376,6 +2639,7 @@
         if (!agentSel) return;
 
         const currentVal = agentSel.value;
+        const currentAnalytics = analyticsSel ? analyticsSel.value : '';
         agentSel.innerHTML = `<option value="">${I18N.t('sidebarAllAgentsOption')}</option>`;
         if (analyticsSel) analyticsSel.innerHTML = `<option value="">${I18N.t('analyticsAllAgentsOption')}</option>`;
 
@@ -2384,6 +2648,7 @@
             agentSel.add(opt);
             if (analyticsSel) analyticsSel.add(new Option(`${a.name} (${a.email})`, a.email));
         });
+        if (analyticsSel && AppState.agents.some(a => a.email === currentAnalytics)) analyticsSel.value = currentAnalytics;
 
         if (currentVal && AppState.agents.some(a => a.email === currentVal)) {
             agentSel.value = currentVal;
@@ -2599,6 +2864,7 @@
                 <label>${I18N.t('filterTopSessions')}</label>
                 <select id="fltTop">
                     <option value="all">${I18N.t('filterAllSessions')}</option>
+                    <option value="above20">${I18N.t('filterSessionsAbove20')}</option>
                     <option value="top5">${I18N.t('filterTop5')}</option>
                     <option value="top10">${I18N.t('filterTop10')}</option>
                 </select>
@@ -2702,17 +2968,22 @@
         if (ag) renderMetricSummaryBarSingleAgent(ag, AppState.selectedMetric);
     }
 
-    // يضبط مؤشر الصفحات وأزرار التنقل: يعرض "الحالي / الإجمالي" ويخفي الأزرار غير اللازمة
-    function updatePaginationControls(page, totalPages) {
+    // يضبط مؤشر الصفحات وأزرار التنقل: يخفي الأزرار ويعرض إجمالي السجلات في الحاوية الثابتة
+    function updatePaginationControls(page, totalPages, totalCount) {
         const prevBtn = el('previous');
         const nextBtn = el('next');
         const pageBadge = el('page');
-        const total = Math.max(1, totalPages || 1);
-        const current = Math.min(Math.max(0, page || 0), total - 1);
-        if (pageBadge) pageBadge.textContent = `${current + 1} / ${total}`;
-        const multi = total > 1;
-        if (prevBtn) prevBtn.style.display = (multi && current > 0) ? '' : 'none';
-        if (nextBtn) nextBtn.style.display = (multi && current < total - 1) ? '' : 'none';
+        if (prevBtn) prevBtn.style.display = 'none';
+        if (nextBtn) nextBtn.style.display = 'none';
+        if (pageBadge) {
+            if (totalCount !== undefined && totalCount !== null) {
+                pageBadge.textContent = `${totalCount} ${I18N.t('agentUnit')}`;
+            } else {
+                const total = Math.max(1, totalPages || 1);
+                const current = Math.min(Math.max(0, page || 0), total - 1);
+                pageBadge.textContent = `${current + 1} / ${total}`;
+            }
+        }
     }
 
     function renderDetailTableOnly() {
@@ -2851,16 +3122,14 @@
         if (matchCount) matchCount.textContent = `${visibleAgents.length} ${I18N.t('agentUnit')}`;
         if (noRows) noRows.hidden = visibleAgents.length > 0;
 
-        const start = AppState.page * AppState.pageSize;
-        const pagedAgents = visibleAgents.slice(start, start + AppState.pageSize);
-        const totalPages = Math.max(1, Math.ceil(visibleAgents.length / AppState.pageSize));
-        updatePaginationControls(AppState.page, totalPages);
+        const pagedAgents = visibleAgents;
+        updatePaginationControls(0, 1, visibleAgents.length);
 
         body.innerHTML = '';
 
         pagedAgents.forEach((agent, i) => {
             const tr = document.createElement('tr');
-            const rowNum = start + i + 1;
+            const rowNum = i + 1;
 
             if (metric === 'all') {
                 const csatPill = isBlank(agent.csat)
@@ -2979,6 +3248,13 @@
     function renderSingleAgentDrillTable(head, body, matchCount, noRows, pageBadge) {
         const data = AppState.activeDrillData;
 
+        if (AppState.drillError && !AppState.drillLoading) {
+            head.innerHTML = '';
+            body.innerHTML = '<tr><td colspan="10" role="alert" style="padding:28px;color:var(--danger)">' + escapeHtml(AppState.drillError) + '</td></tr>';
+            if (noRows) noRows.hidden = true;
+            return;
+        }
+
         if (AppState.drillLoading) {
             head.innerHTML = '';
             body.innerHTML = `
@@ -2996,7 +3272,8 @@
         }
 
         if (!data || !data.found || !data.rows || data.rows.length === 0) {
-            head.innerHTML = '';
+            const emptyHeader = data && Array.isArray(data.header) ? data.header : [];
+            head.innerHTML = emptyHeader.length ? '<tr>' + emptyHeader.map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr>' : '';
             body.innerHTML = `
                 <tr>
                     <td colspan="10" style="text-align:center; padding:45px 20px; color:var(--muted);">
@@ -3067,7 +3344,8 @@
         body.innerHTML = '';
         rawRows.forEach(rowCells => {
             const tr = document.createElement('tr');
-            rowCells.forEach((cell, cIdx) => {
+            rawHeader.forEach((_, cIdx) => {
+                const cell = rowCells[cIdx] == null ? '' : rowCells[cIdx];
                 const td = document.createElement('td');
                 const colName = rawHeader[cIdx] || '';
                 td.innerHTML = formatDrillCell(cell, colName);
@@ -3091,6 +3369,7 @@
 
     // ============ تحليل مساهمة AGBT (نسبة ودقائق الوكيل في كل تكت) ============
     function loadAgbtAttribution() {
+        const requestId = AppState.drillRequestId;
         const email = AppState.selectedAgent;
         if (!email) return;
         const cells = document.querySelectorAll('.agbt-contrib-cell');
@@ -3109,10 +3388,11 @@
             return;
         }
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
-                .withSuccessHandler(res => renderAgbtAttribution(res))
-                .withFailureHandler(() => {
-                    cells.forEach(c => { c.innerHTML = '<span style="color:var(--muted); opacity:0.6;">—</span>'; });
+            dashboardReadRunner_()
+                .withSuccessHandler(res => { if (requestId === AppState.drillRequestId) renderAgbtAttribution(res); })
+                .withFailureHandler(err => {
+                    if (requestId !== AppState.drillRequestId) return;
+                    cells.forEach(c => { c.innerHTML = '<span style="color:var(--danger);font-size:11px;">' + escapeHtml(loadErrorText_(err)) + '</span>'; });
                 })
                 .getAgbtTicketAttribution(email, ticketIds, baseMins, AppState.selectedMonth || '');
         } else {
@@ -3215,11 +3495,12 @@
         overlay.querySelector('#agbtDetailsClose').addEventListener('click', () => overlay.remove());
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
-                .withSuccessHandler(res => renderAgbtDetails(res))
+            dashboardReadRunner_()
+                .withSuccessHandler(res => { if (document.getElementById('agbtDetailsOverlay') === overlay) renderAgbtDetails(res); })
                 .withFailureHandler(err => {
+                    if (document.getElementById('agbtDetailsOverlay') !== overlay) return;
                     const b = document.getElementById('agbtDetailsBody');
-                    if (b) b.innerHTML = '<span style="color:#f87171;">❌ ' + escPeriod(err && err.message ? err.message : err) + '</span>';
+                    if (b) b.innerHTML = '<span style="color:var(--danger);">' + escPeriod(loadErrorText_(err)) + '</span>';
                 })
                 .getAgbtTicketDetails(ticketId, baseMins, AppState.selectedMonth || '');
         } else {
@@ -3294,16 +3575,34 @@
         overlay.className = 'chart-drilldown-overlay';
         overlay.setAttribute('role', 'dialog');
         overlay.setAttribute('aria-modal', 'true');
+        const isAr = I18N.currentLang === 'ar';
         overlay.innerHTML = ''
             + '<div class="chart-drilldown-card" role="document">'
             + '  <div class="chart-drilldown-header">'
-            + '    <h3 id="chartDrilldownTitle" class="chart-drilldown-title">' + escPeriod(I18N.t('drillTitle')) + '</h3>'
+            + '    <div>'
+            + '      <h3 id="chartDrilldownTitle" class="chart-drilldown-title">' + escPeriod(I18N.t('drillTitle')) + '</h3>'
+            + '      <div id="chartDrilldownSubtitle" class="chart-drilldown-subtitle"></div>'
+            + '    </div>'
             + '    <div class="chart-drilldown-header-right">'
             + '      <span id="chartDrilldownMeta" class="chart-drilldown-meta"></span>'
             + '      <button type="button" id="chartDrilldownClose" class="chart-drilldown-close" aria-label="' + escPeriod(I18N.t('drillClose')) + '">✕</button>'
             + '    </div>'
             + '  </div>'
-            + '  <div id="chartDrilldownBody" class="chart-drilldown-body"></div>'
+            + '  <div id="chartDrilldownBody" class="chart-drilldown-body">'
+            + '    <div id="chartDrilldownMetricsGrid" class="chart-drill-metrics-grid"></div>'
+            + '    <div class="chart-drill-tickets-section">'
+            + '      <div class="chart-drill-tickets-header">'
+            + '        <h4 class="chart-drill-tickets-title" id="chartDrillTicketsTitle">' + (isAr ? '📋 سجلات وتذاكر هذا اليوم' : '📋 Day Ticket Records') + '</h4>'
+            + '        <div class="chart-drill-tabs" id="chartDrillTabs">'
+            + '          <button type="button" class="chart-drill-tab-btn active" data-metric="csat">⭐ CSAT</button>'
+            + '          <button type="button" class="chart-drill-tab-btn" data-metric="abst">⏱️ ABST</button>'
+            + '          <button type="button" class="chart-drill-tab-btn" data-metric="agbt">🛒 AGBT</button>'
+            + '          <button type="button" class="chart-drill-tab-btn" data-metric="long">⏳ ' + (isAr ? 'جلسات >20د' : '>20m') + '</button>'
+            + '        </div>'
+            + '      </div>'
+            + '      <div id="chartDrilldownTicketsContainer" class="chart-drilldown-tickets-container"></div>'
+            + '    </div>'
+            + '  </div>'
             + '</div>';
         document.body.appendChild(overlay);
 
@@ -3318,79 +3617,283 @@
         return overlay;
     }
 
-    function setChartDrilldownContent(innerHtml) {
-        const body = document.getElementById('chartDrilldownBody');
-        if (body) body.innerHTML = innerHtml;
+    function renderChartDrilldownMetricsGrid(d) {
+        const grid = document.getElementById('chartDrilldownMetricsGrid');
+        if (!grid) return;
+        const isAr = I18N.currentLang === 'ar';
+
+        // CSAT
+        const csatVal = d.csat != null ? d.csat : (d.csatPct != null ? Math.round(d.csatPct) : null);
+        const csatGood = Number(d.csatGood) || 0;
+        const csatBad = Number(d.csatBad) || 0;
+        const csatTotal = Number(d.csatTotal) || (csatGood + csatBad);
+        const csatRatio = csatTotal > 0 ? Math.round((csatGood / csatTotal) * 100) : (csatVal || 0);
+
+        // ABST
+        let abstStr = '—';
+        let abstSub = isAr ? 'متوسط مدة المحادثة' : 'Avg chat duration';
+        if (d.abstMins && d.abstMins > 0) {
+            const m = Number(d.abstMins);
+            const totalSecs = Math.round(m * 60);
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            abstStr = mins + (isAr ? 'د ' : 'm ') + (secs > 0 ? secs + (isAr ? 'ث' : 's') : '');
+            abstSub = (m / 60).toFixed(2) + (isAr ? ' ساعة • سلة الجلسة' : ' hrs • Basket session');
+        } else if (d.abstSecs && d.abstSecs > 0) {
+            const totalSecs = Math.round(Number(d.abstSecs));
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            abstStr = mins + (isAr ? 'د ' : 'm ') + (secs > 0 ? secs + (isAr ? 'ث' : 's') : '');
+            abstSub = (totalSecs / 3600).toFixed(2) + (isAr ? ' ساعة • سلة الجلسة' : ' hrs • Basket session');
+        }
+
+        // AGBT
+        let agbtStr = '—';
+        let agbtSub = isAr ? 'متوسط معالجة السلة' : 'Avg basket duration';
+        if (d.agbtMins && d.agbtMins > 0) {
+            const m = Number(d.agbtMins);
+            const totalSecs = Math.round(m * 60);
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            agbtStr = mins + (isAr ? 'د ' : 'm ') + (secs > 0 ? secs + (isAr ? 'ث' : 's') : '');
+            agbtSub = (m / 60).toFixed(2) + (isAr ? ' ساعة • السلة العامة' : ' hrs • General basket');
+        } else if (d.agbtSecs && d.agbtSecs > 0) {
+            const totalSecs = Math.round(Number(d.agbtSecs));
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            agbtStr = mins + (isAr ? 'د ' : 'm ') + (secs > 0 ? secs + (isAr ? 'ث' : 's') : '');
+            agbtSub = (totalSecs / 3600).toFixed(2) + (isAr ? ' ساعة • السلة العامة' : ' hrs • General basket');
+        }
+
+        // Sessions & Long
+        const sessions = Number(d.sessions) || 0;
+        const longSessions = Number(d.long || d.longSessions) || 0;
+        const longPct = sessions > 0 ? Math.round((longSessions / sessions) * 100) : 0;
+
+        // Break
+        const breakBreaches = Number(d.breakBreaches) || 0;
+        const breakExceedMins = Number(d.breakExceedMins) || 0;
+
+        // Lateness
+        const latenessIncidents = Number(d.latenessIncidents) || 0;
+        const latenessMins = Number(d.latenessMins) || 0;
+
+        grid.innerHTML = `
+            <div class="chart-drill-kpi-card kpi-csat">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">⭐</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'رضا العملاء (CSAT)' : 'CSAT Score'}</span>
+                </div>
+                <div class="chart-drill-kpi-val ${csatRatio >= 90 ? 'val-good' : (csatRatio >= 80 ? 'val-warn' : 'val-bad')}">
+                    ${csatVal !== null ? csatVal + '%' : '—'}
+                </div>
+                <div class="chart-drill-csat-bar">
+                    <div class="chart-drill-csat-fill good" style="width:${csatRatio}%"></div>
+                    <div class="chart-drill-csat-fill bad" style="width:${100 - csatRatio}%"></div>
+                </div>
+                <div class="chart-drill-kpi-sub">
+                    <span class="pill-good">👍 ${csatGood}</span>
+                    <span class="pill-bad">👎 ${csatBad}</span>
+                    <span class="pill-total">${isAr ? 'الإجمالي: ' : 'Total: '}${csatTotal}</span>
+                </div>
+            </div>
+
+            <div class="chart-drill-kpi-card kpi-abst">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">⏱️</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'وقت الجلسة (ABST)' : 'Avg Session Time'}</span>
+                </div>
+                <div class="chart-drill-kpi-val val-blue">${abstStr}</div>
+                <div class="chart-drill-kpi-sub">
+                    ${abstSub}
+                </div>
+            </div>
+
+            <div class="chart-drill-kpi-card kpi-agbt">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">🛒</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'سلة التذاكر (AGBT)' : 'General Basket Time'}</span>
+                </div>
+                <div class="chart-drill-kpi-val val-purple">${agbtStr}</div>
+                <div class="chart-drill-kpi-sub">
+                    ${agbtSub}
+                </div>
+            </div>
+
+            <div class="chart-drill-kpi-card kpi-sessions">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">💬</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'الجلسات والسيشنز' : 'Total Sessions'}</span>
+                </div>
+                <div class="chart-drill-kpi-val val-cyan">${sessions}</div>
+                <div class="chart-drill-kpi-sub">
+                    <span class="${longSessions > 0 ? 'pill-warn' : 'pill-neutral'}">${isAr ? 'جلسات >20د: ' : '>20m: '}${longSessions} (${longPct}%)</span>
+                </div>
+            </div>
+
+            <div class="chart-drill-kpi-card kpi-break">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">☕</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'تجاوزات البريك' : 'Break Breaches'}</span>
+                </div>
+                <div class="chart-drill-kpi-val ${breakBreaches > 0 ? 'val-bad' : 'val-good'}">${breakBreaches} ${isAr ? 'تجاوز' : 'breaches'}</div>
+                <div class="chart-drill-kpi-sub">
+                    <span class="${breakExceedMins > 0 ? 'pill-bad' : 'pill-neutral'}">${isAr ? 'دقائق التجاوز: ' : 'Exceed: '}${breakExceedMins} ${isAr ? 'د' : 'm'}</span>
+                </div>
+            </div>
+
+            <div class="chart-drill-kpi-card kpi-lateness">
+                <div class="chart-drill-kpi-head">
+                    <span class="chart-drill-kpi-icon">⏰</span>
+                    <span class="chart-drill-kpi-label">${isAr ? 'تأخير الورديات' : 'Lateness'}</span>
+                </div>
+                <div class="chart-drill-kpi-val ${latenessIncidents > 0 ? 'val-bad' : 'val-good'}">${latenessIncidents} ${isAr ? 'حالات' : 'incidents'}</div>
+                <div class="chart-drill-kpi-sub">
+                    <span class="${latenessMins > 0 ? 'pill-bad' : 'pill-neutral'}">${isAr ? 'إجمالي التأخير: ' : 'Total Delay: '}${latenessMins} ${isAr ? 'د' : 'm'}</span>
+                </div>
+            </div>
+        `;
     }
 
-    function setChartDrilldownTitle(label, metric) {
-        const t = document.getElementById('chartDrilldownTitle');
-        if (!t) return;
-        const metricLabel = I18N.t(chartTabLabelKey_(metric)) || METRIC_LABELS[metric] || String(metric || '').toUpperCase();
-        t.textContent = I18N.t('drillTitle') + ' · ' + metricLabel + ' · ' + label;
+    function setupDrilldownTabs(dateStr, email, activeMetric) {
+        const tabsContainer = document.getElementById('chartDrillTabs');
+        const filter20mBtn = document.getElementById('chartDrillFilter20m');
+        if (filter20mBtn) {
+            filter20mBtn.classList.toggle('active', !!AppState.drilldownFilter20m);
+            filter20mBtn.onclick = () => {
+                AppState.drilldownFilter20m = !AppState.drilldownFilter20m;
+                filter20mBtn.classList.toggle('active', !!AppState.drilldownFilter20m);
+                loadChartDrilldownTickets(dateStr, email, AppState.drilldownActiveMetric || activeMetric, ++AppState.drilldownRequestId);
+            };
+        }
+        if (!tabsContainer) return;
+        tabsContainer.querySelectorAll('.chart-drill-tab-btn').forEach(btn => {
+            const m = btn.getAttribute('data-metric');
+            btn.classList.toggle('active', m === activeMetric);
+            btn.onclick = () => {
+                tabsContainer.querySelectorAll('.chart-drill-tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                AppState.drilldownActiveMetric = m;
+                loadChartDrilldownTickets(dateStr, email, m, ++AppState.drilldownRequestId);
+            };
+        });
     }
 
-    function setChartDrilldownMeta(count, truncated) {
-        const m = document.getElementById('chartDrilldownMeta');
-        if (!m) return;
-        let txt = I18N.t('drillRowsCount', { count: count });
-        if (truncated) txt += ' · ' + I18N.t('drillTruncated', { count: 200 });
-        m.textContent = txt;
-    }
+    function loadChartDrilldownTickets(dateStr, email, metric, requestId) {
+        const container = document.getElementById('chartDrilldownTicketsContainer');
+        if (!container) return;
+        const isAr = I18N.currentLang === 'ar';
 
-    function openChartDrilldown(index) {
-        const buckets = AppState.chartBuckets || [];
-        const bucket = buckets[index];
-        const email = currentAnalyticsEmail();
-        if (!bucket || !email) return;
+        container.innerHTML = '<div class="chart-drilldown-state chart-drilldown-loading">⏳ ' + escPeriod(I18N.t('drillLoading')) + '</div>';
 
-        const metric = AppState.currentChartTab || 'csat';
-        const grouping = AppState.chartByShift ? 'shift' : 'day';
-        const requestId = ++AppState.drilldownRequestId;
-        AppState.drilldownOpen = true;
+        // 1. Check local preview mock tickets
+        if (typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_TICKETS__ === 'function') {
+            const mockRes = window.__LOCAL_PREVIEW_GET_TICKETS__(dateStr, email, metric);
+            if (mockRes && Array.isArray(mockRes.rows) && mockRes.rows.length > 0) {
+                let rows = mockRes.rows;
+                if (AppState.drilldownFilter20m) {
+                    rows = rows.filter(r => (r.durationMins >= 20 || (r.score && String(r.score).includes('20'))));
+                }
+                renderChartDrilldownTickets({ success: true, rows: rows, total: rows.length }, metric);
+                return;
+            }
+        }
 
-        ensureChartDrilldownModal();
-        const overlay = document.getElementById('chartDrilldownOverlay');
-        if (overlay) overlay.classList.add('open');
-        setChartDrilldownTitle(bucket.displayDay || bucket.day, metric);
-        setChartDrilldownMeta(0, false);
-        setChartDrilldownContent('<div class="chart-drilldown-state chart-drilldown-loading">⏳ ' + escPeriod(I18N.t('drillLoading')) + '</div>');
+        // 2. Check localStorage raw json
+        try {
+            const rawJson = getStoredRawJson();
+            if (rawJson) {
+                const parsed = JSON.parse(rawJson.replace(/^\uFEFF/, ''));
+                const rawResults = parsed.results || (Array.isArray(parsed) && parsed[0]?.metric ? parsed : (parsed.header ? [parsed] : []));
+                const target = String(email || '').toLowerCase().trim();
+                const sourceMetric = chartDrilldownSourceMetric_(metric);
+                const rec = (Array.isArray(rawResults) ? rawResults : []).find(r => {
+                    const rAgent = String(r.agent || '').toLowerCase().trim();
+                    const rMetric = String(r.metric || '').toLowerCase().trim();
+                    return (rAgent === target || target.includes(rAgent) || rAgent.includes(target.split('@')[0])) && (rMetric === sourceMetric || rMetric === metric);
+                });
+                if (rec && Array.isArray(rec.rows)) {
+                    const header = rec.header || [];
+                    const ticketIdx = findTicketIdCol(header);
+                    const timeIdx = findSessionMinsCol(header);
+                    const chanIdx = findColIndex(header, 'ticket_channel', 'channel');
+                    const scoreIdx = findColIndex(header, 'csat_adjusted', 'csat', 'score');
 
+                    const rows = [];
+                    for (const row of rec.rows) {
+                        const rowDay = extractRowDate(row, header);
+                        if (rowDay !== dateStr) continue;
+                        if ((metric === 'long' || AppState.drilldownFilter20m) && !isLongSessionRow_(row, header) && !(durationMins >= 20)) continue;
+
+                        let durationMins = null;
+                        if (timeIdx !== -1) {
+                            const raw = String(row[timeIdx] == null ? '' : row[timeIdx]).trim();
+                            if (raw.indexOf(':') !== -1) {
+                                const parts = raw.split(':');
+                                const hh = parseFloat(parts[0]);
+                                const mm = parseFloat(parts[1]);
+                                if (!isNaN(hh) || !isNaN(mm)) durationMins = (isNaN(hh) ? 0 : hh) * 60 + (isNaN(mm) ? 0 : mm);
+                            } else {
+                                const n = parseFloat(raw);
+                                if (!isNaN(n)) durationMins = n;
+                            }
+                        }
+
+                        rows.push({
+                            ticket: ticketIdx !== -1 ? String(row[ticketIdx] == null ? '' : row[ticketIdx]) : '',
+                            datetime: extractRowTimestamp(row, header) || rowDay,
+                            durationMins: durationMins,
+                            channel: chanIdx !== -1 ? String(row[chanIdx] == null ? '' : row[chanIdx]) : '',
+                            score: scoreIdx !== -1 ? String(row[scoreIdx] == null ? '' : row[scoreIdx]) : ''
+                        });
+                        if (rows.length >= 200) break;
+                    }
+                    if (rows.length > 0) {
+                        renderChartDrilldownTickets({ success: true, rows: rows, total: rows.length }, metric);
+                        return;
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
+
+        // 3. Google Apps Script server request
         if (typeof google !== 'undefined' && google.script && google.script.run) {
             const payload = {
                 month: AppState.selectedMonth || '',
                 agent: email,
                 metric: metric,
-                grouping: 'day', // الـDrill-down متاح لوضع By Day فقط (الشفت استنتاج ولا يملك نافذة ثابتة)
-                date: bucket.day
+                grouping: 'day',
+                date: dateStr
             };
-            google.script.run
+            dashboardReadRunner_()
                 .withSuccessHandler(res => {
-                    if (requestId !== AppState.drilldownRequestId) return; // منع رد قديم من استبدال أحدث نقطة
-                    renderChartDrilldown(res, metric);
+                    if (requestId !== AppState.drilldownRequestId) return;
+                    renderChartDrilldownTickets(res, metric);
                 })
                 .withFailureHandler(() => {
                     if (requestId !== AppState.drilldownRequestId) return;
-                    setChartDrilldownContent('<div class="chart-drilldown-state chart-drilldown-empty">❌ ' + escPeriod(I18N.t('drillError')) + '</div>');
+                    container.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">ℹ️ '
+                        + (isAr ? 'تم عرض ملخص جميع المقاييس لهذا اليوم بالأعلى بنجاح.' : 'All metrics summary is displayed above.') + '</div>';
                 })
                 .getAgentChartDrilldown(payload);
         } else {
-            setChartDrilldownContent('<div class="chart-drilldown-state chart-drilldown-empty">' + escPeriod(I18N.t('drillPublishedOnly')) + '</div>');
+            // Local preview or offline without tickets
+            container.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">ℹ️ '
+                + (isAr ? 'تم عرض ملخص جميع المقاييس لهذا اليوم بالأعلى بنجاح.' : 'All metrics summary is displayed above.') + '</div>';
         }
     }
 
-    function renderChartDrilldown(res, metric) {
-        if (!res || !res.success) {
-            setChartDrilldownContent('<div class="chart-drilldown-state chart-drilldown-empty">❌ ' + escPeriod(I18N.t('drillError')) + '</div>');
-            return;
-        }
-        const rows = Array.isArray(res.rows) ? res.rows : [];
-        if (!rows.length) {
-            setChartDrilldownMeta(0, false);
-            setChartDrilldownContent('<div class="chart-drilldown-state chart-drilldown-empty">📭 ' + escPeriod(I18N.t('drillEmpty')) + '</div>');
+    function renderChartDrilldownTickets(res, metric) {
+        const container = document.getElementById('chartDrilldownTicketsContainer');
+        if (!container) return;
+        const isAr = I18N.currentLang === 'ar';
+        if (!res || !res.success || !Array.isArray(res.rows) || res.rows.length === 0) {
+            container.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">📭 '
+                + (isAr ? 'لا توجد سجلات تذاكر تفصيلية لهذا المقياس في هذا اليوم (يمكنك تجربة تبويب آخر أو مراجعة ملخص المقاييس بالأعلى).' : 'No ticket records for this metric on this day.') + '</div>';
             return;
         }
 
+        const rows = res.rows;
         const isCsat = metric === 'csat';
         const showDuration = (metric === 'abst' || metric === 'agbt' || metric === 'long' || metric === 'sessions');
 
@@ -3416,22 +3919,68 @@
                     ? '—' : escPeriod(formatDuration(Number(r.durationMins)));
                 html += '<td dir="ltr" class="drill-duration">' + dm + '</td>';
             }
-            if (isCsat) html += '<td>' + escPeriod(r.score || '—') + '</td>';
-            html += '<td>' + escPeriod(r.channel || '—') + '</td>';
+            if (isCsat) {
+                const scoreLower = String(r.score || '').toLowerCase();
+                const isGood = scoreLower === 'good' || scoreLower === '5' || scoreLower === '4';
+                const isBad = scoreLower === 'bad' || scoreLower === '1';
+                const scoreClass = isGood ? 'pill-good' : (isBad ? 'pill-bad' : '');
+                html += '<td><span class="' + scoreClass + '">' + escPeriod(r.score || '—') + '</span></td>';
+            }
+            html += '<td>' + formatChannelBadge(r.channel) + '</td>';
             html += '</tr>';
         });
         html += '</tbody></table></div>';
 
-        setChartDrilldownContent(html);
-        setChartDrilldownMeta(res.total || rows.length, res.truncated);
+        container.innerHTML = html;
 
-        // رقم التذكرة قابل للنقر → نفس دالة فتح تفاصيل التكت الحالية
-        const body = document.getElementById('chartDrilldownBody');
-        if (body) {
-            body.querySelectorAll('.chart-drilldown-ticket').forEach(btn => {
-                btn.addEventListener('click', () => openAgbtDetails(btn.getAttribute('data-ticket-id'), 0));
-            });
+        // Bind ticket click
+        container.querySelectorAll('.chart-drilldown-ticket').forEach(btn => {
+            btn.addEventListener('click', () => openAgbtDetails(btn.getAttribute('data-ticket-id'), 0));
+        });
+    }
+
+    function openChartDrilldown(index) {
+        const buckets = AppState.chartBuckets || [];
+        const bucket = buckets[index];
+        const email = currentAnalyticsEmail();
+        if (!bucket || !email) return;
+
+        const dateStr = bucket.day;
+        const displayDay = bucket.displayDay || dateStr;
+        const initialMetric = AppState.currentChartTab || 'csat';
+        AppState.drilldownDate = dateStr;
+        AppState.drilldownAgent = email;
+        AppState.drilldownActiveMetric = initialMetric;
+        AppState.drilldownFilter20m = false;
+        const requestId = ++AppState.drilldownRequestId;
+        AppState.drilldownOpen = true;
+
+        ensureChartDrilldownModal();
+        const overlay = document.getElementById('chartDrilldownOverlay');
+        if (overlay) overlay.classList.add('open');
+
+        const isAr = I18N.currentLang === 'ar';
+        const titleEl = document.getElementById('chartDrilldownTitle');
+        if (titleEl) {
+            titleEl.textContent = (isAr ? 'تفاصيل اليوم الكاملة · ' : 'Full Day Performance · ') + displayDay;
         }
+        const subtitleEl = document.getElementById('chartDrilldownSubtitle');
+        if (subtitleEl) {
+            subtitleEl.textContent = (isAr ? 'الوكيل: ' : 'Agent: ') + email + ' (' + dateStr + ')';
+        }
+        const metaEl = document.getElementById('chartDrilldownMeta');
+        if (metaEl) metaEl.textContent = dateStr;
+
+        // 1. Render All Metrics Grid IMMEDIATELY (Zero delay, Never fails!)
+        const allDays = (Array.isArray(AppState.chartDays) && AppState.chartDays.length > 0)
+            ? AppState.chartDays
+            : (Array.isArray(AppState.historicalDays) ? AppState.historicalDays : []);
+        const dayData = allDays.find(d => d.day === dateStr) || bucket;
+        renderChartDrilldownMetricsGrid(dayData);
+
+        // 2. Setup Tabs & Load Tickets
+        setupDrilldownTabs(dateStr, email, initialMetric);
+        loadChartDrilldownTickets(dateStr, email, initialMetric, requestId);
     }
 
     function closeChartDrilldown() {
@@ -3443,6 +3992,42 @@
             const o = document.getElementById('chartDrilldownOverlay');
             if (o && !AppState.drilldownOpen) o.remove();
         }, 220);
+    }
+
+    
+    function findColIndex(headers, ...candidates) {
+        return findHeaderCol(headers, ...candidates);
+    }
+
+    function findTicketIdCol(header) {
+        return findColIndex(header, 'ticket_id', 'ticket id', 'session_id', 'session id', 'ticket_number', 'ticket number', 'ticket');
+    }
+
+    function findSessionMinsCol(header) {
+        return findColIndex(header, 'basket_session_time_min', 'basket_session_time', 'session_time_min', 'session_time', 'abst', 'time');
+    }
+
+    function isLongSessionRow_(row, header) {
+        if (!row || !header) return false;
+        const h = header.map(c => String(c).toLowerCase().trim());
+        const minsIdx = findSessionMinsCol(header);
+        const over20Idx = h.findIndex(c => c === '> 20' || c.includes('> 20') || c.includes('over_20'));
+        if (minsIdx !== -1) {
+            const raw = String(row[minsIdx] == null ? '' : row[minsIdx]).trim();
+            let m = parseFloat(raw);
+            if (raw.includes(':')) {
+                const parts = raw.split(':');
+                const hh = parseFloat(parts[0]);
+                const mm = parseFloat(parts[1]);
+                if (!isNaN(hh) || !isNaN(mm)) m = (isNaN(hh) ? 0 : hh) * 60 + (isNaN(mm) ? 0 : mm);
+            }
+            if (!isNaN(m) && m >= 20) return true;
+        }
+        if (over20Idx !== -1) {
+            const v = String(row[over20Idx] || '').toLowerCase().trim();
+            if (v === 'high' || v === 'yes' || v === 'true' || v === '1') return true;
+        }
+        return false;
     }
 
     function findHeaderCol(headers, ...candidates) {
@@ -3479,6 +4064,24 @@
         return null;
     }
 
+    function formatChannelBadge(channelVal) {
+        if (!channelVal || String(channelVal).trim() === '' || channelVal === '—') {
+            return `<span style="color:var(--muted); opacity:0.6;">—</span>`;
+        }
+        const text = String(channelVal).trim();
+        const lower = text.toLowerCase();
+        if (lower === 'chat' || lower.includes('chat') || lower.includes('محادثة')) {
+            return `<span style="color:#0284c7; font-weight:600; display:inline-flex; align-items:center; gap:4px;">💬 Chat</span>`;
+        }
+        if (lower === 'phone' || lower === 'voice' || lower.includes('phone') || lower.includes('voice') || lower.includes('call') || lower.includes('هاتف') || lower.includes('صوت')) {
+            return `<span style="color:#7c3aed; font-weight:600; display:inline-flex; align-items:center; gap:4px;">📞 Phone</span>`;
+        }
+        if (lower === 'email' || lower.includes('mail') || lower.includes('بريد')) {
+            return `<span style="color:#d97706; font-weight:600; display:inline-flex; align-items:center; gap:4px;">✉️ Email</span>`;
+        }
+        return escapeHtml(text);
+    }
+
     function formatDrillCell(val, colName) {
         if (val === null || val === undefined || String(val).trim() === '' || val === '—') {
             return `<span style="color:var(--muted); opacity:0.6;">—</span>`;
@@ -3504,10 +4107,8 @@
         }
 
         // 3. Channel
-        if (lowerCol.includes('channel')) {
-            if (lower === 'chat') return `<span style="color:#38bdf8; font-weight:600;">💬 Chat</span>`;
-            if (lower === 'phone') return `<span style="color:#a78bfa; font-weight:600;">📞 Phone</span>`;
-            if (lower === 'email') return `<span style="color:#fbbf24; font-weight:600;">✉️ Email</span>`;
+        if (lowerCol.includes('channel') || lowerCol === 'chan') {
+            return formatChannelBadge(text);
         }
 
         // 4. Country
@@ -3672,6 +4273,9 @@
     }
 
     function loadSingleAgentDrills(email, metric) {
+        if (AppState.sheetLoading) return;
+        const requestId = ++AppState.drillRequestId;
+        AppState.drillError = '';
         // مقياس "all" في وضع الوكيل الفردي يفتح CSAT افتراضياً
         const targetMetric = (metric === 'all') ? 'csat' : metric;
 
@@ -3694,9 +4298,9 @@
         };
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
+            dashboardReadRunner_()
                 .withSuccessHandler((res) => {
-                    if (AppState.drillLoadKey !== `${email}::${metric}` ||
+                    if (requestId !== AppState.drillRequestId || AppState.drillLoadKey !== `${email}::${metric}` ||
                         AppState.selectedAgent !== email ||
                         AppState.selectedMetric !== metric) {
                         return;
@@ -3718,13 +4322,14 @@
                     }
                     renderDetailTableOnly();
                 })
-                .withFailureHandler(() => {
-                    if (AppState.drillLoadKey !== `${email}::${metric}` ||
+                .withFailureHandler(err => {
+                    if (requestId !== AppState.drillRequestId || AppState.drillLoadKey !== `${email}::${metric}` ||
                         AppState.selectedAgent !== email ||
                         AppState.selectedMetric !== metric) {
                         return;
                     }
                     AppState.drillLoading = false;
+                    AppState.drillError = loadErrorText_(err);
                     AppState.activeDrillData = { found: false, header: [], rows: [] };
                     AppState.drillTotal = 0;
                     AppState.drillTotalPages = 1;
@@ -3758,7 +4363,7 @@
 
         let target = null;
         try {
-            const rawJson = localStorage.getItem('gas_agent_dashboard_raw_json');
+            const rawJson = getStoredRawJson();
             if (rawJson) {
                 const parsed = JSON.parse(rawJson.replace(/^\uFEFF/, ''));
                 const rawResults = parsed.results || (Array.isArray(parsed) && parsed[0]?.metric ? parsed : (parsed.header ? [parsed] : []));
@@ -3803,7 +4408,13 @@
             }
             const fltChan = opts.channel || 'all';
             if (fltChan !== 'all' && chanIdx !== -1) {
-                if (String(row[chanIdx] || '').toLowerCase().trim() !== fltChan.toLowerCase()) return false;
+                const cellChan = String(row[chanIdx] || '').toLowerCase().trim();
+                const filterChan = fltChan.toLowerCase();
+                if (filterChan === 'phone') {
+                    if (cellChan !== 'phone' && cellChan !== 'voice' && !cellChan.includes('phone') && !cellChan.includes('voice')) return false;
+                } else if (cellChan !== filterChan) {
+                    return false;
+                }
             }
             const fltDate = opts.datePreset || 'all';
             if (fltDate !== 'all') {
@@ -3821,9 +4432,18 @@
 
         const top = opts.topSessions || 'all';
         if (top !== 'all' && timeIdx !== -1) {
-            filtered.sort((a, b) => parseTimeToSeconds(b[timeIdx]) - parseTimeToSeconds(a[timeIdx]));
-            const n = top === 'top5' ? 5 : 10;
-            filtered = filtered.slice(0, n);
+            if (top === 'above20' || top === '20m') {
+                filtered = filtered.filter(row => {
+                    const secs = parseTimeToSeconds(row[timeIdx]);
+                    if (secs >= 20 * 60) return true;
+                    if (typeof isLongSessionRow_ === 'function' && isLongSessionRow_(row, header)) return true;
+                    return false;
+                });
+            } else {
+                filtered.sort((a, b) => parseTimeToSeconds(b[timeIdx]) - parseTimeToSeconds(a[timeIdx]));
+                const n = top === 'top5' ? 5 : 10;
+                filtered = filtered.slice(0, n);
+            }
         }
 
         const sortIdx = (opts.sortColIdx !== undefined && opts.sortColIdx !== null && opts.sortColIdx !== '') ? parseInt(opts.sortColIdx, 10) : -1;
@@ -3895,7 +4515,9 @@
      * شاشة الإحصائيات المتقدمة والرسوم البيانية (Analytics View)
      */
     function renderAnalyticsView() {
+        if (AppState.sheetLoading) return;
         if (!AppState.agents || AppState.agents.length === 0) return;
+        if (el('analyticsContent')) el('analyticsContent').hidden = false;
 
         const selectedAgentEmail = (el('analyticsAgentSelect') ? el('analyticsAgentSelect').value : '').trim().toLowerCase();
         let targetAgents = AppState.agents;
@@ -3911,6 +4533,8 @@
         } else {
             // إبطال أي طلب إحصائيات سابق لوكيل مفرد حتى لا يكتب فوق بيانات الفريق
             AppState.analyticsRequestId++;
+            AppState.analyticsLoadKey = '';
+            AppState.analyticsError = '';
             AppState.chartDays = AppState.historicalDays;
             AppState.analyticsLoading = false;
         }
@@ -4012,12 +4636,22 @@
             const abstAvgSecs = abstCount > 0 ? Math.round(abstSecsSum / abstCount) : 0;
 
             // نقل أرقام الفريق إلى مربع الإحصائيات السفلي (بديل بطاقات KPI العلوية)
-            if (el('teamStatCsat')) el('teamStatCsat').textContent = countCsat > 0 ? `${avgCsat}%` : '—';
+            let totalGoodCsat = 0, totalBadCsat = 0, totalEvalCsat = 0;
+            AppState.agents.forEach(a => {
+                totalGoodCsat += Number(a.csatGood) || 0;
+                totalBadCsat += Number(a.csatBad) || 0;
+            });
+            totalEvalCsat = totalGoodCsat + totalBadCsat;
+            const trueTeamCsat = totalEvalCsat > 0
+                ? (Math.round((totalGoodCsat / totalEvalCsat) * 100 * 10) / 10).toFixed(1)
+                : (AppState.overview && AppState.overview.csatPct !== null ? Number(AppState.overview.csatPct).toFixed(1) : (countCsat > 0 ? avgCsat : '—'));
+
+            if (el('teamStatCsat')) el('teamStatCsat').textContent = (trueTeamCsat !== '—' && trueTeamCsat !== null) ? `${trueTeamCsat}%` : '—';
             if (el('teamStatAgbt')) el('teamStatAgbt').textContent = agbtCount > 0 ? formatDuration(agbtAvgSecs / 60) : '—';
             if (el('teamStatAbst')) el('teamStatAbst').textContent = abstCount > 0 ? formatDuration(abstAvgSecs / 60) : '—';
             if (el('teamStatBreach')) {
-                el('teamStatBreach').textContent = breachExceedText(totalBreachMins);
-                el('teamStatBreach').title = breachCountText(totalBreaches);
+                el('teamStatBreach').textContent = breachCountText(totalBreaches);
+                el('teamStatBreach').title = breachExceedText(totalBreachMins);
             }
             if (el('teamStatLateness')) el('teamStatLateness').textContent = fmtMinutes(totalLate);
             if (el('teamStatIdle')) el('teamStatIdle').textContent = idleCount > 0 ? formatDuration(idleAvgHours * 60) : fmtHours(0);
@@ -4029,53 +4663,171 @@
         // 5. تصنيف CSAT
         const csatBox = el('csatBreakdownBody');
         if (csatBox) {
-            let evalCount = 0, reachedTarget = 0;
+            let totalGood = 0, totalBad = 0, evalAgents = 0, targetAgents = 0;
             AppState.agents.forEach(a => {
                 const c = Number(a.csat) || 0;
                 if (c > 0) {
-                    evalCount++;
-                    if (c >= 90) reachedTarget++;
+                    evalAgents++;
+                    if (c >= 90) targetAgents++;
                 }
+                totalGood += Number(a.csatGood) || 0;
+                totalBad += Number(a.csatBad) || 0;
             });
-            const highPct = evalCount > 0 ? Math.round((reachedTarget / evalCount) * 100) : 0;
-            csatBox.innerHTML = `
-                <div style="margin-bottom:14px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                        <span>${I18N.t('csatDistributionSub')}</span>
-                        <strong style="color:#10b981;">${highPct}% (${reachedTarget} / ${evalCount})</strong>
+            const evalCsat = totalGood + totalBad;
+            const goodPct = evalCsat > 0 ? Math.round((totalGood / evalCsat) * 100) : (evalAgents > 0 ? Math.round((targetAgents / evalAgents) * 100) : 0);
+            const badPct = 100 - goodPct;
+            const agentPct = evalAgents > 0 ? Math.round((targetAgents / evalAgents) * 100) : 0;
+
+            let ratioLabelsHtml = '';
+            if (evalCsat > 0) {
+                const goodHtml = totalGood > 0 || totalBad === 0
+                    ? `<span style="color:var(--ok); font-weight:600;">${I18N.t('satisfiedLabel')}: ${totalGood} (${goodPct}%)</span>`
+                    : '';
+                const badHtml = totalBad > 0
+                    ? `<span style="color:var(--bad); font-weight:600;">${I18N.t('unsatisfiedLabel')}: ${totalBad} (${badPct}%)</span>`
+                    : '';
+                ratioLabelsHtml = `
+                    <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;">
+                        ${goodHtml}
+                        ${badHtml}
                     </div>
-                    <div class="kpi-bar-track"><div class="kpi-bar-fill emerald" style="width:${highPct}%;"></div></div>
+                `;
+            }
+
+            csatBox.innerHTML = `
+                <div class="csat-ratio-strip" style="margin-bottom:14px;">
+                    ${ratioLabelsHtml}
+                    <div class="csat-ratio-bar" style="height:10px; border-radius:6px; background:rgba(var(--ink-rgb), 0.1); overflow:hidden; display:flex;">
+                        <div style="width:${goodPct}%; background:#10b981; transition:width 0.4s ease;"></div>
+                        <div style="width:${badPct}%; background:#ef4444; transition:width 0.4s ease;"></div>
+                    </div>
                 </div>
-                <div style="font-size:12px; color:var(--muted); line-height:1.6;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:12px;">
+                    <span>${I18N.t('csatDistributionSub')}</span>
+                    <strong style="color:#10b981;">${agentPct}% (${targetAgents} / ${evalAgents})</strong>
+                </div>
+                <div class="kpi-bar-track" style="margin-bottom:12px;"><div class="kpi-bar-fill emerald" style="width:${agentPct}%;"></div></div>
+                <div style="font-size:11.5px; color:var(--muted); line-height:1.6;">
                     ${I18N.t('csatNote')}
                 </div>
             `;
         }
 
-        // 6. ترتيب أداء الوكلاء
+        // 6. ترتيب أداء الوكلاء (عرض كل الوكلاء + مفاضلة السيسات + تتبع الرتبة اليومية)
         const rankList = el('agentsCompareList');
         if (rankList) {
             rankList.innerHTML = '';
-            const sortedAgents = [...AppState.agents].sort((a, b) => (Number(b.csat) || 0) - (Number(a.csat) || 0)).slice(0, 10);
+            // الفرز الأساسي: نسبة CSAT تنازلياً، وعند التساوي يُفاضل بعدد السيسات/التقييمات ثم إجمالي السيشنات
+            const sortedAgents = [...AppState.agents].sort((a, b) => {
+                const csatA = Number(a.csat) || 0;
+                const csatB = Number(b.csat) || 0;
+                if (csatB !== csatA) return csatB - csatA;
+                const totalA = Number(a.csatTotal) || 0;
+                const totalB = Number(b.csatTotal) || 0;
+                if (totalB !== totalA) return totalB - totalA;
+                const sessA = Number(a.sessions) || 0;
+                const sessB = Number(b.sessions) || 0;
+                return sessB - sessA;
+            });
+
+            // قراءة ومقارنة الترتيب اليومي (Daily Rank Tracking)
+            const storageKey = 'gas_agent_ranks_' + (AppState.selectedMonth || 'current');
+            let savedRanks = {};
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (raw) savedRanks = JSON.parse(raw);
+            } catch (e) {}
+
+            const currentRanksToSave = {};
+
             sortedAgents.forEach((a, idx) => {
-                const isCurrentAgent = isSingleAgent && (a.email || '').toLowerCase() === selectedAgentEmail;
+                const currentRank = idx + 1;
+                const emailKey = (a.email || '').toLowerCase();
+                if (emailKey) currentRanksToSave[emailKey] = currentRank;
+
+                const isCurrentAgent = isSingleAgent && emailKey === selectedAgentEmail;
+
+                // فحص ما إذا كان هناك وكيل ملاصق له نفس نسبة CSAT للمفاضلة
+                const prevAgent = idx > 0 ? sortedAgents[idx - 1] : null;
+                const nextAgent = idx < sortedAgents.length - 1 ? sortedAgents[idx + 1] : null;
+                const hasSameCsatAsNeighbor = (prevAgent && (Number(prevAgent.csat) || 0) === (Number(a.csat) || 0)) ||
+                                              (nextAgent && (Number(nextAgent.csat) || 0) === (Number(a.csat) || 0));
+
+                // حساب تغير الرتبة اليومي (+ أخضر، - أحمر، 0 محايد)
+                let rankChange = (a.rankChange !== undefined && a.rankChange !== null) ? a.rankChange : null;
+                if (rankChange === null && savedRanks[emailKey] !== undefined) {
+                    const prevR = Number(savedRanks[emailKey]);
+                    if (!isNaN(prevR) && prevR > 0) {
+                        rankChange = prevR - currentRank;
+                    }
+                }
+
+                let rankChangeHtml = '';
+                if (rankChange !== null) {
+                    if (rankChange > 0) {
+                        rankChangeHtml = `<span class="rank-change positive" title="${I18N.t('rankUp', { n: rankChange })}">▲ +${rankChange}</span>`;
+                    } else if (rankChange < 0) {
+                        rankChangeHtml = `<span class="rank-change negative" title="${I18N.t('rankDown', { n: Math.abs(rankChange) })}">▼ ${rankChange}</span>`;
+                    } else {
+                        rankChangeHtml = `<span class="rank-change neutral" title="${I18N.t('rankSame')}">—</span>`;
+                    }
+                } else {
+                    rankChangeHtml = `<span class="rank-change new-tag" title="${I18N.t('rankNew')}">⭐ NEW</span>`;
+                }
+
+                // وسام الرتبة (ذهب للمركز الأول، فضة للثاني، برونز للثالث)
+                let rankBadgeHtml = '';
+                if (currentRank === 1) {
+                    rankBadgeHtml = `<span class="badge rank-badge rank-gold" title="المركز الأول 🥇">🥇 #1</span>`;
+                } else if (currentRank === 2) {
+                    rankBadgeHtml = `<span class="badge rank-badge rank-silver" title="المركز الثاني 🥈">🥈 #2</span>`;
+                } else if (currentRank === 3) {
+                    rankBadgeHtml = `<span class="badge rank-badge rank-bronze" title="المركز الثالث 🥉">🥉 #3</span>`;
+                } else {
+                    rankBadgeHtml = `<span class="badge rank-badge">#${currentRank}</span>`;
+                }
+
                 const item = document.createElement('div');
                 item.className = 'rank-item' + (isCurrentAgent ? ' current-active-agent' : '');
-                item.style.cssText = `display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid var(--border-subtle); ${isCurrentAgent ? 'background:rgba(56, 189, 248, 0.12); border-radius:6px;' : ''}`;
+                item.setAttribute('data-email', escapeHtml(a.email || ''));
+                item.style.cursor = 'pointer';
                 item.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span class="badge" style="background:var(--panel-sub); color:#fff; font-weight:700;">#${idx + 1}</span>
-                        <div>
-                            <strong style="color:#fff; display:block; font-size:13px;">${escapeHtml(a.name)} ${isCurrentAgent ? '⭐' : ''}</strong>
-                            <span style="color:var(--muted); font-size:11px;">${escapeHtml(a.email)}</span>
+                    <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:2px; min-width:44px;">
+                            ${rankBadgeHtml}
+                            ${rankChangeHtml}
+                        </div>
+                        <div style="min-width:0; overflow:hidden;">
+                            <strong style="color:#fff; display:block; font-size:13px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+                                ${escapeHtml(a.name)} ${isCurrentAgent ? '⭐' : ''}
+                            </strong>
+                            <span style="color:var(--muted); font-size:11px; display:block; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+                                ${escapeHtml(a.email)}
+                            </span>
                         </div>
                     </div>
-                    <div style="text-align:inherit;">
-                        <span class="badge badge-success" style="font-weight:700;">${a.csat}% CSAT</span>
+                    <div style="text-align:end; display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
+                        <span class="badge badge-success" style="font-weight:700; font-size:12px;">${isBlank(a.csat) ? '—' : a.csat + '% CSAT'}</span>
+                        <span style="color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums;">
+                            ${(() => {
+                                const count = (a.csatTotal !== undefined && a.csatTotal !== null && a.csatTotal !== '')
+                                    ? Number(a.csatTotal)
+                                    : (((Number(a.csatGood) || 0) + (Number(a.csatBad) || 0)) || Number(a.csatCount) || 0);
+                                return count + ' ' + I18N.t('unitCsats');
+                            })()}
+                        </span>
                     </div>
                 `;
+                item.addEventListener('click', () => {
+                    selectAgent(a.email);
+                });
                 rankList.appendChild(item);
             });
+
+            // حفظ ترتيب اليوم في التخزين المحلي لاستخدامه كمرجع عند التحديث القادم
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(currentRanksToSave));
+            } catch (e) {}
         }
     }
 
@@ -4115,6 +4867,12 @@
      * جلب الخط الزمني اليومي لوكيل واحد فقط من الملفات المفصولة في Google Drive.
      */
     function loadSingleAgentAnalytics(email) {
+        if (AppState.sheetLoading) return;
+        const key = JSON.stringify([email, AppState.selectedMonth || '', !!AppState.chartByShift]);
+        if (AppState.analyticsLoadKey === key && (AppState.analyticsLoading ||
+            (!AppState.analyticsError && Date.now() - AppState.analyticsLoadedAt < DashboardReads.ttl))) return;
+        AppState.analyticsLoadKey = key;
+        AppState.analyticsError = '';
         AppState.analyticsLoading = true;
         AppState.chartDays = [];
         AppState.shiftConfigNeeded = false;
@@ -4123,10 +4881,11 @@
         renderAnalyticsQuickStripAndChart();
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
+            dashboardReadRunner_()
                 .withSuccessHandler((res) => {
                     if (requestId !== AppState.analyticsRequestId) return;
                     AppState.analyticsLoading = false;
+                    AppState.analyticsLoadedAt = Date.now();
                     AppState.shiftConfigNeeded = false;
                     AppState.chartDays = (res && res.success && Array.isArray(res.days)) ? res.days : [];
                     AppState.chartShiftWindow = (res && res.shift) ? res.shift : null;
@@ -4138,9 +4897,10 @@
                     renderAnalyticsQuickStripAndChart();
                     refreshAgentSummaryBar_();
                 })
-                .withFailureHandler(() => {
+                .withFailureHandler(err => {
                     if (requestId !== AppState.analyticsRequestId) return;
                     AppState.analyticsLoading = false;
+                    AppState.analyticsError = loadErrorText_(err);
                     AppState.chartDays = [];
                     renderAnalyticsQuickStripAndChart();
                 })
@@ -4148,7 +4908,11 @@
         } else {
             // وضع المعاينة المحلي: نحسب الأيام الحقيقية لهذا الوكيل من البيانات المحفوظة (بدون اختلاق بيانات)
             AppState.analyticsLoading = false;
-            const local = computeAgentDaysLocally(email, AppState.chartByShift);
+            AppState.analyticsLoadedAt = Date.now();
+            let local = computeAgentDaysLocally(email, AppState.chartByShift);
+            if ((!local || (Array.isArray(local) && local.length === 0)) && typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__ === 'function') {
+                local = window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__(email, AppState.selectedMonth);
+            }
             AppState.shiftConfigNeeded = false;
             AppState.chartDays = Array.isArray(local) ? local : (local && local.days) || [];
             AppState.chartShiftWindow = (local && local.shift) ? local.shift : null;
@@ -4181,7 +4945,12 @@
                     agbtCount: 0,
                     csatGood: 0,
                     csatBad: 0,
-                    long: 0
+                    long: 0,
+                    breakBreaches: 0,
+                    breakExceedMins: 0,
+                    latenessIncidents: 0,
+                    latenessMins: 0,
+                    idleHours: 0
                 };
             }
             return dailyMap[day];
@@ -4387,7 +5156,7 @@
         }
 
         try {
-            const rawJson = localStorage.getItem('gas_agent_dashboard_raw_json');
+            const rawJson = getStoredRawJson();
             if (!rawJson) return byShift ? { days: [], shift: null } : [];
             const parsed = JSON.parse(rawJson.replace(/^\uFEFF/, ''));
             const rawResults = parsed.results || (Array.isArray(parsed) && parsed[0]?.metric ? parsed : (parsed.header ? [parsed] : []));
@@ -4421,6 +5190,10 @@
                 const h = header.map(c => String(c).toLowerCase().trim());
                 const cIdx = h.findIndex(c => c.includes('csat_adjusted') || c === 'csat' || c.includes('score'));
                 const aIdx = h.findIndex(c => c === 'abst' || c.includes('basket_session_time') || c.includes('session_time') || c === 'agbt' || c.includes('basket_time'));
+                const breakMetIdx = findHeaderCol(h, 'break exceed', 'break_exceed', 'status');
+                const breakExceedIdx = findHeaderCol(h, 'break exceed time', 'exceed_time', 'exceed_mins', 'exceed');
+                const lateIdx = findHeaderCol(h, 'exceed mins', 'exceed_mins', 'lateness', 'late_mins', 'delay_mins', 'delay');
+                const idleIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
 
                 rec.rows.forEach((row, rowIdx) => {
                     const day = byShift
@@ -4444,6 +5217,34 @@
                         const val = cIdx !== -1 ? String(row[cIdx] || '').toLowerCase().trim() : '';
                         if (val === 'good' || val === '5' || val === '4' || val === 'positive' || val.includes('ممتاز') || val.includes('جيد')) e.csatGood++;
                         else if (val === 'bad' || val === '1' || val === '2' || val === 'negative' || val.includes('سيء')) e.csatBad++;
+                    } else if (metric === 'breakbreach' || metric === 'break') {
+                        let breached = false;
+                        if (breakMetIdx !== -1) {
+                            const v = String(row[breakMetIdx] || '').toLowerCase().trim();
+                            if (v === 'not met' || v === 'breached' || v.includes('breach')) breached = true;
+                        }
+                        let exceedM = 0;
+                        if (breakExceedIdx !== -1) {
+                            const v = parseFloat(row[breakExceedIdx]);
+                            if (!isNaN(v) && v > 0) { exceedM = v; breached = true; }
+                        }
+                        if (breached) e.breakBreaches++;
+                        e.breakExceedMins += exceedM;
+                    } else if (metric === 'lateness' || metric === 'late') {
+                        if (lateIdx !== -1) {
+                            const v = parseFloat(row[lateIdx]);
+                            if (!isNaN(v) && v > 0) {
+                                e.latenessIncidents++;
+                                e.latenessMins += v;
+                            }
+                        }
+                    } else if (metric === 'idle') {
+                        if (idleIdx !== -1) {
+                            const v = parseFloat(row[idleIdx]);
+                            if (!isNaN(v) && v > 0) {
+                                e.idleHours += v;
+                            }
+                        }
                     }
                 });
             });
@@ -4461,7 +5262,12 @@
                     csatGood: e.csatGood || 0,
                     csatBad: e.csatBad || 0,
                     csatTotal: csatEval,
-                    long: e.long
+                    long: e.long,
+                    breakBreaches: e.breakBreaches || 0,
+                    breakExceedMins: Math.round((e.breakExceedMins || 0) * 10) / 10,
+                    latenessIncidents: e.latenessIncidents || 0,
+                    latenessMins: Math.round((e.latenessMins || 0) * 10) / 10,
+                    idleHours: Math.round((e.idleHours || 0) * 10) / 10
                 };
             });
 
@@ -4494,8 +5300,11 @@
     }
 
     function ensureAgentsChartData() {
+        if (AppState.sheetLoading) return;
         const key = agentChartKeyNow();
-        if (AppState.agentChartKey === key && AppState.agentChartData && !AppState.agentChartLoading) {
+        if (AppState.agentChartPendingKey === key && AppState.agentChartLoading) return;
+        if (AppState.agentChartKey === key && (AppState.agentChartError ||
+            (AppState.agentChartData && Date.now() - AppState.agentChartLoadedAt < DashboardReads.ttl)) && !AppState.agentChartLoading) {
             renderAgentBarChart();
             return;
         }
@@ -4508,28 +5317,36 @@
         const key = agentChartKeyNow();
         const reqId = ++AppState.agentChartRequestId;
         AppState.agentChartLoading = true;
+        AppState.agentChartPendingKey = key;
+        AppState.agentChartError = '';
         AppState.agentChartKey = '';
         renderAgentBarChart();
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
-            google.script.run
+            dashboardReadRunner_()
                 .withSuccessHandler(res => {
                     if (reqId !== AppState.agentChartRequestId) return;
                     AppState.agentChartLoading = false;
+                    AppState.agentChartPendingKey = '';
+                    AppState.agentChartLoadedAt = Date.now();
                     AppState.agentChartData = (res && res.success && Array.isArray(res.agents)) ? res : { success: true, metric: metric, agents: [] };
                     AppState.agentChartKey = key;
                     renderAgentBarChart();
                 })
-                .withFailureHandler(() => {
+                .withFailureHandler(err => {
                     if (reqId !== AppState.agentChartRequestId) return;
                     AppState.agentChartLoading = false;
-                    AppState.agentChartData = { success: true, metric: metric, agents: [] };
+                    AppState.agentChartPendingKey = '';
+                    AppState.agentChartError = loadErrorText_(err);
+                    AppState.agentChartData = null;
                     AppState.agentChartKey = key;
                     renderAgentBarChart();
                 })
                 .getAgentsChartData(metric, range.start, range.end, AppState.selectedMonth || '');
         } else {
             AppState.agentChartLoading = false;
+            AppState.agentChartLoadedAt = Date.now();
+            AppState.agentChartPendingKey = '';
             AppState.agentChartData = { success: true, metric: metric, agents: computeAgentsChartLocally(metric) };
             AppState.agentChartKey = key;
             renderAgentBarChart();
@@ -4565,6 +5382,11 @@
 
     function renderAgentBarChart() {
         const wrap = el('analyticsChartWrap');
+        if (wrap && AppState.agentChartError && !AppState.agentChartLoading) {
+            wrap.innerHTML = '<p role="alert" style="padding:28px;color:var(--danger)">' + escapeHtml(AppState.agentChartError) + '</p>';
+            if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = '—';
+            return;
+        }
         const badge = el('chartActiveDaysCountBadge');
         if (!wrap) return;
         wrap.style.overflowX = '';
@@ -4773,6 +5595,14 @@
         const badgeDays = el('chartActiveDaysCountBadge');
         if (!wrap) return;
         wrap.style.overflowX = '';
+
+        if (AppState.analyticsError && !AppState.analyticsLoading) {
+            wrap.innerHTML = '<p role="alert" style="padding:28px;color:var(--danger)">' + escapeHtml(AppState.analyticsError) + '</p>';
+            ['secStatTotalSessions', 'secStatDailyAvg', 'secStatActiveDays', 'secStatLongSessions', 'chartBenchmarkVal'].forEach(id => {
+                if (el(id)) el(id).textContent = '—';
+            });
+            return;
+        }
 
         if (AppState.analyticsLoading) {
             wrap.innerHTML = `
@@ -5097,9 +5927,25 @@
         updateChartDrillHint(drillEnabled);
     }
 
+    function getStoredRawJson() {
+        if (typeof window !== 'undefined' && window.__RAW_JSON_IN_MEMORY__) {
+            return window.__RAW_JSON_IN_MEMORY__;
+        }
+        try {
+            return localStorage.getItem('gas_agent_dashboard_raw_json');
+        } catch (e) {
+            return null;
+        }
+    }
+
     function loadLocalPreviewMode() {
         // 1. Check for real local saved data first
         try {
+            if (typeof window !== 'undefined' && window.__LOCAL_DASHBOARD_DATA_MEM__) {
+                handleSheetDataSuccess(window.__LOCAL_DASHBOARD_DATA_MEM__);
+                message(`✓ تم استعادة بياناتك الحقيقية (${window.__LOCAL_DASHBOARD_DATA_MEM__.agents.length} وكيل، ${window.__LOCAL_DASHBOARD_DATA_MEM__.summary.totalDrillRows} ريكورد) بنجاح 🟢.`);
+                return;
+            }
             const raw = localStorage.getItem('gas_agent_dashboard_local_data');
             if (raw) {
                 const parsed = JSON.parse(raw);
@@ -5360,6 +6206,9 @@
                 name: agentName,
                 email: email,
                 csat: csatPct,
+                csatGood: csatGood,
+                csatBad: csatBad,
+                csatTotal: csatEval,
                 agbt: agbtStr,
                 abst: abstStr,
                 breakBreach: String(breakBreaches),
