@@ -208,6 +208,8 @@
                 avgSessionsLabel: 'Avg Daily Sessions:',
                 agentTotalSessionsLabel: 'Total Sessions:',
                 agentLastDaySessionsLabel: 'Sessions (Last Day: {date}):',
+                agentGoodCsatLabel: 'Good CSAT:',
+                agentBadCsatLabel: 'Bad CSAT:',
                 
                 // Analytics View
                 analyticsTitle: 'Live Performance Analytics & Charts',
@@ -565,6 +567,8 @@
                 avgSessionsLabel: 'متوسط السيشن اليومي:',
                 agentTotalSessionsLabel: 'إجمالي السيشنات:',
                 agentLastDaySessionsLabel: 'سيشنات آخر يوم ({date}):',
+                agentGoodCsatLabel: 'Good CSAT (راضي):',
+                agentBadCsatLabel: 'Bad CSAT (غير راضي):',
                 
                 // Analytics View
                 analyticsTitle: 'إحصائيات الأداء والتحليلات البيانية',
@@ -1135,16 +1139,25 @@
             if (parts.length === 0) parts.push('0m');
             return (neg ? '-' : '') + parts.join(' ');
         }
-        return (total / 60).toFixed(2);
+        return total.toFixed(2);
     }
 
     // أغلفة مختصرة حسب نوع القيمة المصدرية
     function fmtMinutes(value) {
-        const mins = (typeof value === 'number') ? value : parseDurationValueToMinutes(value);
-        return formatDuration(mins, AppState.timeMode);
+        if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
+        if (AppState.timeMode === 'time') return formatDuration(Number(value), 'time');
+        return Number(value).toFixed(1);
     }
-    function fmtTimeStr(value) { return formatDuration(parseDurationValueToMinutes(value), AppState.timeMode); }
-    function fmtHours(value) { return formatDuration(hoursValueToMinutes(value), AppState.timeMode); }
+    function fmtTimeStr(value) {
+        if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
+        if (AppState.timeMode === 'time') return formatDuration(Number(value), 'time');
+        return Number(value).toFixed(2);
+    }
+    function fmtHours(value) {
+        if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
+        if (AppState.timeMode === 'time') return formatDuration(Number(value) * 60, 'time');
+        return Number(value).toFixed(1);
+    }
 
     function parseMinutesFromString(str) {
         const s = String(str || '').trim().toLowerCase();
@@ -2909,8 +2922,25 @@
         const avgAgbtText = agbtCount > 0 ? formatDuration(Math.round(agbtSecsSum / agbtCount) / 60) : '—';
         const avgAbstText = abstCount > 0 ? formatDuration(Math.round(abstSecsSum / abstCount) / 60) : '—';
 
+        // تلوين بطاقة CSAT حسب التارجت: 90%+ أخضر، 75%-89.9% أصفر، أقل من 75% أحمر
+        const csatNum = parseFloat(avgCsat);
+        let csatColor = 'var(--m-csat)';
+        let csatSoft = 'var(--m-csat-soft)';
+        if (!isNaN(csatNum)) {
+            if (csatNum >= 90) {
+                csatColor = '#10b981';
+                csatSoft = 'rgba(16, 185, 129, 0.15)';
+            } else if (csatNum >= 75) {
+                csatColor = '#f59e0b';
+                csatSoft = 'rgba(245, 158, 11, 0.15)';
+            } else {
+                csatColor = '#ef4444';
+                csatSoft = 'rgba(239, 68, 68, 0.15)';
+            }
+        }
+
         bar.innerHTML = `
-            <div class="summary-pill" data-metric="csat"><span class="pill-label">${I18N.t('teamAvgCsatLabel')}</span> <b class="pill-value">${avgCsat}%</b></div>
+            <div class="summary-pill" data-metric="csat" style="--mc:${csatColor}; --mc-soft:${csatSoft};"><span class="pill-label">${I18N.t('teamAvgCsatLabel')}</span> <b class="pill-value" style="color:${csatColor};">${avgCsat}%</b></div>
             <div class="summary-pill" data-metric="agbt"><span class="pill-label">${I18N.t('kpiAgbtTitle')}</span> <b class="pill-value">${avgAgbtText}</b></div>
             <div class="summary-pill" data-metric="abst"><span class="pill-label">ABST:</span> <b class="pill-value">${avgAbstText}</b></div>
             <div class="summary-pill" data-metric="breakBreach"><span class="pill-label">${I18N.t('kpiBreachTitle')}</span> <b class="pill-value">${breachExceedText(totalBreachMins)}</b><span class="pill-sub">${breachCountText(totalBreaches)}</span></div>
@@ -2942,11 +2972,55 @@
         const lastDay = agentLastDaySessions_(agent.email);
         const lastDayLabel = I18N.t('agentLastDaySessionsLabel', { date: lastDay ? String(lastDay.day).slice(5) : '—' });
 
+        // حساب عدد التقييمات الإيجابية (Good) والسلبية (Bad) مع معالجة الحالات البديلة
+        let goodCount = (agent.csatGood !== undefined && agent.csatGood !== null) ? Number(agent.csatGood) : null;
+        let badCount = (agent.csatBad !== undefined && agent.csatBad !== null) ? Number(agent.csatBad) : null;
+
+        // بديل 1: إذا لم تكن موجودة في كائن الوكيل، نحاول حسابها من بيانات الـ drill الحالية إذا كان المقياس CSAT
+        if ((goodCount === null || badCount === null) && AppState.activeDrillData && AppState.activeDrillData.rows && AppState.selectedMetric === 'csat') {
+            const h = (AppState.activeDrillData.header || []).map(c => String(c).toLowerCase().trim());
+            const cIdx = findHeaderCol(h, 'csat_adjusted', 'csat', 'score', 'rating');
+            if (cIdx !== -1) {
+                let g = 0, b = 0;
+                AppState.activeDrillData.rows.forEach(r => {
+                    const val = String(r[cIdx] || '').toLowerCase().trim();
+                    if (val === 'good' || val === '5' || val === '4' || val === 'positive' || val.includes('ممتاز') || val.includes('جيد')) g++;
+                    else if (val === 'bad' || val === '1' || val === '2' || val === 'negative' || val.includes('سيء')) b++;
+                });
+                if (g + b > 0) {
+                    goodCount = g;
+                    badCount = b;
+                }
+            }
+        }
+
+        // بديل 2: حسابها من إجمالي السيسات والنسبة المئوية
+        if ((goodCount === null || badCount === null) && !isBlank(agent.csat) && !isBlank(agent.csatTotal) && Number(agent.csatTotal) > 0) {
+            const total = Number(agent.csatTotal);
+            goodCount = Math.round(total * (Number(agent.csat) / 100));
+            badCount = Math.max(0, total - goodCount);
+        }
+
+        const hasCsatData = !isBlank(agent.csat) || (goodCount !== null && goodCount > 0) || (badCount !== null && badCount > 0);
+        const goodDisplay = hasCsatData && goodCount !== null ? `👍 ${goodCount}` : '—';
+        const badDisplay = hasCsatData && badCount !== null ? `👎 ${badCount}` : '—';
+
+        // تلوين CSAT حسب التارجت: 90%+ أخضر، 75%-89.9% أصفر، أقل من 75% أحمر
+        let csatColor = 'var(--muted)';
+        if (!isBlank(agent.csat)) {
+            const cVal = Number(agent.csat);
+            if (cVal >= 90) csatColor = '#10b981';
+            else if (cVal >= 75) csatColor = '#f59e0b';
+            else csatColor = '#ef4444';
+        }
+
         // عرض مختصر (نفس نمط شريط الإحصائيات): عنوان صغير + قيمة ملوّنة بلون المقياس
         const items = [
             { label: I18N.t('agentTotalSessionsLabel'), val: isBlank(agent.sessions) ? '—' : agent.sessions, color: 'var(--m-sessions)' },
             { label: lastDayLabel, val: lastDay ? lastDay.sessions : '—', color: 'var(--m-sessions)' },
-            { label: 'CSAT:', val: isBlank(agent.csat) ? '—' : agent.csat + '%', color: 'var(--m-csat)' },
+            { label: 'CSAT:', val: isBlank(agent.csat) ? '—' : agent.csat + '%', color: csatColor },
+            { label: I18N.t('agentGoodCsatLabel'), val: goodDisplay, color: '#34d399' },
+            { label: I18N.t('agentBadCsatLabel'), val: badDisplay, color: '#f87171' },
             { label: 'AGBT:', val: fmtTimeStr(agent.agbt), color: 'var(--m-agbt)' },
             { label: 'ABST:', val: fmtTimeStr(agent.abst), color: 'var(--purple)' },
             { label: latenessLabel, val: fmtMinutes(agent.lateness), color: 'var(--m-late)' },
@@ -4106,6 +4180,25 @@
             }
         }
 
+        // 2b. Status Before Closure / Ticket Status (Solved = أخضر, Pending = أصفر)
+        if (lowerCol.includes('status') || lower === 'solved' || lower === 'pending') {
+            if (lower === 'solved' || lower.includes('solved') || lower.includes('محلول')) {
+                return `<span class="badge badge-solved badge-success" style="background:rgba(16, 185, 129, 0.15); color:#34d399; border:1px solid rgba(16, 185, 129, 0.3); font-weight:600; padding:2px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:4px;">✓ ${escapeHtml(text)}</span>`;
+            }
+            if (lower === 'pending' || lower.includes('pending') || lower.includes('معلق') || lower.includes('انتظار')) {
+                return `<span class="badge badge-pending badge-warning" style="background:rgba(245, 158, 11, 0.15); color:#fbbf24; border:1px solid rgba(245, 158, 11, 0.3); font-weight:600; padding:2px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:4px;">⏳ ${escapeHtml(text)}</span>`;
+            }
+            if (lower === 'closed' || lower.includes('closed') || lower.includes('مغلق')) {
+                return `<span class="badge badge-status-neutral" style="background:rgba(148, 163, 184, 0.15); color:#94a3b8; border:1px solid rgba(148, 163, 184, 0.3); font-weight:600; padding:2px 8px; border-radius:6px;">${escapeHtml(text)}</span>`;
+            }
+            if (lower === 'hold' || lower.includes('hold')) {
+                return `<span class="badge badge-danger" style="background:rgba(239, 68, 68, 0.15); color:#f87171; border:1px solid rgba(239, 68, 68, 0.3); font-weight:600; padding:2px 8px; border-radius:6px;">⏸ ${escapeHtml(text)}</span>`;
+            }
+            if (lower === 'open' || lower.includes('open') || lower.includes('مفتوح')) {
+                return `<span class="badge" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3); font-weight:600; padding:2px 8px; border-radius:6px;">● ${escapeHtml(text)}</span>`;
+            }
+        }
+
         // 3. Channel
         if (lowerCol.includes('channel') || lowerCol === 'chan') {
             return formatChannelBadge(text);
@@ -4646,7 +4739,13 @@
                 ? (Math.round((totalGoodCsat / totalEvalCsat) * 100 * 10) / 10).toFixed(1)
                 : (AppState.overview && AppState.overview.csatPct !== null ? Number(AppState.overview.csatPct).toFixed(1) : (countCsat > 0 ? avgCsat : '—'));
 
-            if (el('teamStatCsat')) el('teamStatCsat').textContent = (trueTeamCsat !== '—' && trueTeamCsat !== null) ? `${trueTeamCsat}%` : '—';
+            if (el('teamStatCsat')) {
+                el('teamStatCsat').textContent = (trueTeamCsat !== '—' && trueTeamCsat !== null) ? `${trueTeamCsat}%` : '—';
+                const num = parseFloat(trueTeamCsat);
+                if (!isNaN(num)) {
+                    el('teamStatCsat').style.color = num >= 90 ? '#10b981' : (num >= 75 ? '#f59e0b' : '#ef4444');
+                }
+            }
             if (el('teamStatAgbt')) el('teamStatAgbt').textContent = agbtCount > 0 ? formatDuration(agbtAvgSecs / 60) : '—';
             if (el('teamStatAbst')) el('teamStatAbst').textContent = abstCount > 0 ? formatDuration(abstAvgSecs / 60) : '—';
             if (el('teamStatBreach')) {
@@ -4807,13 +4906,28 @@
                         </div>
                     </div>
                     <div style="text-align:end; display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
-                        <span class="badge badge-success" style="font-weight:700; font-size:12px;">${isBlank(a.csat) ? '—' : a.csat + '% CSAT'}</span>
+                        ${(() => {
+                            let badgeClass = 'badge subtle';
+                            if (!isBlank(a.csat)) {
+                                const c = Number(a.csat);
+                                if (c >= 90) badgeClass = 'badge-success';
+                                else if (c >= 75) badgeClass = 'badge-warning';
+                                else badgeClass = 'badge-danger';
+                            }
+                            return `<span class="badge ${badgeClass}" style="font-weight:700; font-size:12px;">${isBlank(a.csat) ? '—' : a.csat + '% CSAT'}</span>`;
+                        })()}
                         <span style="color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums;">
                             ${(() => {
                                 const count = (a.csatTotal !== undefined && a.csatTotal !== null && a.csatTotal !== '')
                                     ? Number(a.csatTotal)
                                     : (((Number(a.csatGood) || 0) + (Number(a.csatBad) || 0)) || Number(a.csatCount) || 0);
-                                return count + ' ' + I18N.t('unitCsats');
+                                const badCount = (a.csatBad !== undefined && a.csatBad !== null)
+                                    ? Number(a.csatBad)
+                                    : (count > 0 && !isBlank(a.csat) ? Math.max(0, count - Math.round(count * (Number(a.csat) / 100))) : 0);
+                                const dsatHtml = badCount > 0
+                                    ? ` · <span style="color:var(--danger); font-weight:600;">${badCount} DSAT</span>`
+                                    : ` · <span style="opacity:0.7;">0 DSAT</span>`;
+                                return `${count} ${I18N.t('unitCsats')}${dsatHtml}`;
                             })()}
                         </span>
                     </div>
@@ -6102,8 +6216,15 @@
         const agents = [];
         for (const [agentName, recs] of agentMap.entries()) {
             const email = agentName.includes('@') ? agentName : `${agentName.replace(/\s+/g, '.')}@tabby.ai`;
+            let displayName = agentName;
+            if (email.toLowerCase().includes('ghadah.abdulrahman')) {
+                displayName = 'غادة عبدالرحمن';
+            } else if (agentName.includes('@')) {
+                const prefix = agentName.split('@')[0];
+                displayName = prefix.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+            }
 
-            // CSAT
+            // CSAT (نسبة الرضا - null في حال عدم وجود تقييمات لتظهر كشرطة)
             let csatGood = 0, csatBad = 0;
             recs.filter(r => r.metric === 'csat').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
@@ -6115,9 +6236,9 @@
                 });
             });
             const csatEval = csatGood + csatBad;
-            const csatPct = csatEval > 0 ? parseFloat(((csatGood / csatEval) * 100).toFixed(1)) : 0;
+            const csatPct = csatEval > 0 ? parseFloat(((csatGood / csatEval) * 100).toFixed(1)) : null;
 
-            // AGBT
+            // AGBT (متوسط وقت السلة بالدقائق كقيمة عشرية دقيقة)
             let agbtSum = 0, agbtCount = 0;
             recs.filter(r => r.metric === 'agbt').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
@@ -6129,11 +6250,9 @@
                     }
                 });
             });
-            const agbtAvgMins = agbtCount > 0 ? (agbtSum / agbtCount) : 0;
-            const agbtMins = Math.round(agbtAvgMins);
-            const agbtStr = agbtAvgMins > 0 ? `${Math.floor(agbtAvgMins)}:${String(Math.round((agbtAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+            const agbtAvgMins = agbtCount > 0 ? parseFloat((agbtSum / agbtCount).toFixed(2)) : null;
 
-            // ABST
+            // ABST (متوسط وقت جلسة المعالجة بالدقائق كقيمة عشرية دقيقة)
             let abstSum = 0, abstCount = 0;
             recs.filter(r => r.metric === 'abst').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
@@ -6145,11 +6264,9 @@
                     }
                 });
             });
-            const abstAvgMins = abstCount > 0 ? (abstSum / abstCount) : 0;
-            const abstMins = Math.round(abstAvgMins);
-            const abstStr = abstAvgMins > 0 ? `${Math.floor(abstAvgMins)}:${String(Math.round((abstAvgMins % 1) * 60)).padStart(2, '0')}` : '00:00';
+            const abstAvgMins = abstCount > 0 ? parseFloat((abstSum / abstCount).toFixed(2)) : null;
 
-            // Break breaches (الصفوف المخالفة فعلياً فقط — نفس منطق الخادم: كل عمود متجاوز = مرة)
+            // Break breaches (الصفوف المخالفة فعلياً فقط)
             let breakBreaches = 0;
             let breakExceedMins = 0;
             recs.filter(r => r.metric === 'breakbreach' || r.metric === 'break_breach' || r.metric === 'break').forEach(r => {
@@ -6169,7 +6286,7 @@
                 });
             });
 
-            // Lateness
+            // Lateness (دقائق التأخير الإجمالية بدقة عشرية 35.1)
             let latenessMins = 0;
             recs.filter(r => r.metric === 'lateness').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
@@ -6187,37 +6304,47 @@
                     }
                 });
             });
+            const latenessFormatted = latenessMins > 0 ? parseFloat(latenessMins.toFixed(1)) : 0.0;
 
-            // Idle
-            let idleHours = 0;
+            // Idle (وقت الخمول غير الإنتاجي بالساعات كقيمة عشرية 0.0)
+            let idleHoursSum = 0, idleCount = 0;
             recs.filter(r => r.metric === 'idle').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
-                const iIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
+                const iIdx = findHeaderCol(h, 'time_not_working_h', 'time_without_tickets_h', 'idle');
                 r.rows.forEach(row => {
                     if (iIdx !== -1) {
                         const m = parseFloat(row[iIdx]);
-                        if (!isNaN(m)) idleHours += m;
+                        if (!isNaN(m)) { idleHoursSum += m; idleCount++; }
                     }
                 });
             });
-            const idleStr = idleHours > 0 ? `${Math.round(idleHours * 100) / 100}h` : '0h';
+            const idleAvg = idleCount > 0 ? parseFloat((idleHoursSum / idleCount).toFixed(1)) : 0.0;
+
+            // Productivity (null في حال عدم توفر صفوف لتظهر كشرطة)
+            let prodVal = null;
+            recs.filter(r => r.metric === 'productivity').forEach(r => {
+                if (r.rows && r.rows.length > 0) {
+                    // إذا وُجدت صفوف للإنتاجية يمكن استخلاصها
+                }
+            });
 
             agents.push({
-                name: agentName,
+                name: displayName,
                 email: email,
                 csat: csatPct,
                 csatGood: csatGood,
                 csatBad: csatBad,
                 csatTotal: csatEval,
-                agbt: agbtStr,
-                abst: abstStr,
-                breakBreach: String(breakBreaches),
-                breakExceedMins: Math.round(breakExceedMins * 100) / 100,
+                agbt: agbtAvgMins,
+                abst: abstAvgMins,
+                breakBreach: breakBreaches > 0 ? String(breakBreaches) : null,
+                breakExceedMins: parseFloat(breakExceedMins.toFixed(2)),
                 sessions: (recs.filter(r => r.metric === 'abst').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)
+                    || recs.filter(r => r.metric === 'agbt').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)
                     || recs.filter(r => r.metric === 'csat').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)),
-                lateness: Math.round(latenessMins),
-                idle: idleStr,
-                productivity: `${Math.max(0, Math.min(100, Math.round(csatPct - (breakBreaches * 2) - (latenessMins > 30 ? 5 : 0))))}%`
+                lateness: latenessFormatted,
+                idle: idleAvg,
+                productivity: prodVal
             });
         }
 

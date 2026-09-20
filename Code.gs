@@ -2002,19 +2002,21 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
         if (agStat.hasCsat && agStat.csatPct !== null) csatVal = agStat.csatPct;
         else if (metaHasNum(meta.csat)) csatVal = Number(meta.csat);
 
-        // AGBT: drill > بطاقة الملخص > فارغ
+        // AGBT: drill > بطاقة الملخص > فارغ (بالدقائق العشرية)
         let agbtVal = null;
-        if (agStat.hasAgbt && agStat.agbtDisplay) agbtVal = agStat.agbtDisplay;
-        else if (metaHasVal(meta.agbt)) agbtVal = String(meta.agbt);
+        if (agStat.hasAgbt && agStat.agbtAvg !== null && agStat.agbtAvg !== undefined) agbtVal = agStat.agbtAvg;
+        else if (agStat.hasAgbt && agStat.agbtDisplay) agbtVal = agStat.agbtDisplay;
+        else if (metaHasVal(meta.agbt)) agbtVal = meta.agbt;
 
-        // ABST: drill > بطاقة الملخص > فارغ
+        // ABST: drill > بطاقة الملخص > فارغ (بالدقائق العشرية)
         let abstVal = null;
-        if (agStat.hasAbst && agStat.abstAvg) abstVal = agStat.abstAvg;
-        else if (metaHasVal(meta.abst)) abstVal = String(meta.abst);
+        if (agStat.hasAbst && agStat.abstAvgMins !== null && agStat.abstAvgMins !== undefined) abstVal = agStat.abstAvgMins;
+        else if (agStat.hasAbst && agStat.abstAvg) abstVal = agStat.abstAvg;
+        else if (metaHasVal(meta.abst)) abstVal = meta.abst;
 
-        // Break Breach: drill > بطاقة الملخص > فارغ
+        // Break Breach: drill > بطاقة الملخص > فارغ (null إذا كانت 0 ليظهر كشرطة)
         let breakVal = null;
-        if (agStat.hasBreak && agStat.breakBreaches !== undefined) breakVal = String(agStat.breakBreaches);
+        if (agStat.hasBreak && agStat.breakBreaches !== undefined) breakVal = agStat.breakBreaches > 0 ? String(agStat.breakBreaches) : null;
         else if (metaHasVal(meta.breakBreach)) breakVal = String(meta.breakBreach);
 
         // Lateness (دقائق): drill > بطاقة الملخص > فارغ
