@@ -656,7 +656,7 @@ function normalizeRecord(result, index, fileName) {
     throw new Error(`النتيجة ${index + 1}: تنسيق غير صالح للكائن.`);
   }
 
-  const agent = String(result.agent || result.email || '').trim();
+  const agent = String(result.agent || result.email || '').trim().toLowerCase();
   const metric = String(result.metric || '').trim().toLowerCase();
   const rawHeader = Array.isArray(result.header) ? result.header : [];
   const rawRows = Array.isArray(result.rows) ? result.rows : [];
@@ -716,6 +716,20 @@ function normalizeRecord(result, index, fileName) {
  */
 function rowKey(row, header) {
   if (!Array.isArray(row) || !Array.isArray(header)) return '';
+  const names = header.map(h => String(h).toLowerCase().trim());
+  const sessionId = names.findIndex(h => h === 'session_id' || h === 'session id');
+  if (sessionId !== -1 && String(row[sessionId] || '').trim()) return 'session::' + row[sessionId];
+  // ABST contains multiple sessions for the same ticket, even within one day.
+  const sessionTime = names.indexOf('created_at_dubai');
+  const sessionMins = names.findIndex(h => h.includes('basket_session_time') || h === 'session_time' || h === 'abst');
+  if (sessionMins !== -1) {
+    const ticket = names.findIndex(h => h === 'ticket_id' || h === 'ticket id');
+    if (ticket !== -1 && sessionTime !== -1 && row[sessionTime]) {
+      return JSON.stringify(['session', row[ticket], row[sessionTime], row[sessionMins]]);
+    }
+    // Without a session identifier/timestamp, never collapse different durations.
+    return 'row::' + row.map(cell => textCell(cell).trim()).join('\u0000');
+  }
   let ticketIdIdx = -1;
   let dateIdx = -1;
   let planShiftIdx = -1;
@@ -726,7 +740,7 @@ function rowKey(row, header) {
       ticketIdIdx = i;
     } else if (h === 'report_dt' || h === 'date') {
       dateIdx = i;
-    } else if (h === 'plan_shift_start' || h === 'fact_shift_start') {
+    } else if (h === 'plan_shift_start' || (h === 'fact_shift_start' && planShiftIdx === -1)) {
       planShiftIdx = i;
     }
   }
@@ -834,6 +848,9 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
       target.rows = target.rows.map(row => Array.from({ length: target.header.length }, (_, i) => row[i] == null ? '' : row[i]));
       const existingKeys = new Set(target.rows.map(r => rowKey(r, target.header)));
       const existingRows = new Map(target.rows.map(r => [rowKey(r, target.header), r]));
+      const incomingTime = Date.parse(incoming.capturedAt || '');
+      const storedTime = Date.parse(target.capturedAt || '');
+      const acceptUpdates = !Number.isFinite(incomingTime) || !Number.isFinite(storedTime) || incomingTime >= storedTime;
       let addedCount = 0;
       let skippedCount = 0;
 
@@ -843,7 +860,7 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
         if (existingKeys.has(key)) {
           const savedRow = existingRows.get(key);
           if (savedRow) alignedRow.forEach((cell, i) => {
-            if ((savedRow[i] === '' || savedRow[i] == null) && cell !== '' && cell != null) savedRow[i] = cell;
+            if ((acceptUpdates || savedRow[i] === '' || savedRow[i] == null) && cell !== '' && cell != null) savedRow[i] = cell;
           });
           skippedCount++;
         } else {
@@ -856,6 +873,7 @@ function mergeRecords(existingRecords = [], incomingRecords = []) {
 
       totalAdded += addedCount;
       totalSkipped += skippedCount;
+      if (acceptUpdates && incoming.capturedAt) target.capturedAt = incoming.capturedAt;
       addedDetails.push({
         agent: incoming.agent,
         metric: incoming.metric,
@@ -1119,8 +1137,8 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
   for (const rec of agbtRecords) {
     const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
     const agbtColIdx = findColIndex(h, 'sum_basket_time_for_ticket_per_hour_min_ONLINE_WOMT', 'sum_basket_time_for_ticket_per_hour_min', 'basket_time', 'agbt', 'time');
-    const ticketsColIdx = findColIndex(h, 'tickets', 'ticket', 'sessions count', 'sessions');
-    const basketColIdx = findColIndex(h, 'basket_time_h', 'basket_time', 'basket_session_time_min');
+    const ticketsColIdx = h.findIndex(c => c === 'tickets' || c === 'ticket_count');
+    const basketColIdx = h.indexOf('basket_time_h');
 
     for (const row of rec.rows || []) {
       if (agbtColIdx !== -1) {
@@ -1131,12 +1149,15 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
         }
       }
       if (ticketsColIdx !== -1) {
-        const t = parseFloat(row[ticketsColIdx]);
-        if (!isNaN(t)) agbtTickets += t;
-      }
+        const t = Number(row[ticketsColIdx]);
+        if (Number.isFinite(t) && t >= 0) agbtTickets += t;
+      } else agbtTickets++;
       if (basketColIdx !== -1) {
         const b = parseFloat(row[basketColIdx]);
         if (!isNaN(b)) agbtBasketHours += b;
+      } else if (agbtColIdx !== -1) {
+        const mins = parseFloat(row[agbtColIdx]);
+        if (Number.isFinite(mins)) agbtBasketHours += mins / 60;
       }
     }
   }
@@ -1187,6 +1208,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
 
   // 5. إحصائيات كل وكيل بدقة متناهية (Per-Agent Stats)
   const agentStats = {};
+  const sessionSourceByAgent = {};
   const agentsToAnalyze = agentFilter ? [agentFilter] : uniqueAgents;
 
   for (const ag of agentsToAnalyze) {
@@ -1196,7 +1218,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     const hasCsat = agRecs.some(r => r.metric === 'csat');
     const hasAgbt = agRecs.some(r => r.metric === 'agbt');
     const hasAbst = agRecs.some(r => r.metric === 'abst');
-    const hasBreak = agRecs.some(r => r.metric === 'breakBreach');
+    const hasBreak = agRecs.some(r => String(r.metric).toLowerCase() === 'breakbreach' || r.metric === 'break');
     const hasLateness = agRecs.some(r => r.metric === 'lateness');
     const hasIdle = agRecs.some(r => r.metric === 'idle');
 
@@ -1236,12 +1258,14 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     }
 
     // ABST
-    let agAbstSum = 0, agAbstCount = 0, agAbstSessions = 0;
+    let agAbstSum = 0, agAbstCount = 0, agAbstSessions = 0, agLongSessions = 0;
     for (const r of agRecs.filter(r => r.metric === 'abst')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
       const sIdx = findColIndex(h, 'basket_session_time_min', 'session_time', 'basket_session_time', 'abst', 'time');
+      const longIdx = h.findIndex(c => c.includes('> 20') || c.includes('over_20'));
       for (const row of r.rows || []) {
         agAbstSessions++;
+        if ((sIdx !== -1 && parseFloat(row[sIdx]) >= 20) || (longIdx !== -1 && /^(high|yes)$/i.test(String(row[longIdx]).trim()))) agLongSessions++;
         if (sIdx !== -1) {
           const val = parseFloat(row[sIdx]);
           if (!isNaN(val)) {
@@ -1278,12 +1302,18 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     const agAgbtFormatted = agAgbtAvgMins > 0 ? `${Math.floor(agAgbtAvgMins)}:${String(Math.round((agAgbtAvgMins % 1) * 60)).padStart(2, '0')}` : null;
     // إجمالي سيشنات الوكيل — نفس دلالات الخط الزمني (abstSessions → agbtSessions → csatTotal)
     const agSessions = agAbstSessions > 0 ? agAbstSessions : (agAgbtSessions > 0 ? agAgbtSessions : agCsatTotal);
+    sessionSourceByAgent[ag] = agAbstSessions > 0 ? 'abst' : (agAgbtSessions > 0 ? 'agbt' : 'csat');
 
     agentStats[ag] = {
       agent: ag,
       recordsCount: agRecs.length,
       rowsCount: agRows,
       sessions: agSessions,
+      longSessions: agLongSessions,
+      agbtTotalMins: agAgbtSum,
+      agbtCount: agAgbtCount,
+      abstTotalMins: agAbstSum,
+      abstCount: agAbstCount,
       hasCsat,
       hasAgbt,
       hasAbst,
@@ -1313,6 +1343,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
       dailyMap[day] = {
         day,
         displayDay: day.slice(5),
+        sessions: 0,
         abstSessions: 0,
         abstTotalMins: 0,
         abstCount: 0,
@@ -1326,7 +1357,9 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
         breakExceedMins: 0,
         breakBreaches: 0,
         latenessMins: 0,
-        latenessIncidents: 0
+        latenessIncidents: 0,
+        idleHours: 0,
+        idleCount: 0
       };
     }
     return dailyMap[day];
@@ -1369,6 +1402,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
 
       if (metric === 'abst') {
         entry.abstSessions++;
+        if (sessionSourceByAgent[r.agent] === 'abst') entry.sessions++;
         let isLong = false;
         if (abstMinsIdx !== -1) {
           const m = parseFloat(row[abstMinsIdx]);
@@ -1393,6 +1427,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
           if (!isNaN(t) && t > 0) sCount = t;
         }
         entry.agbtSessions += sCount;
+        if (sessionSourceByAgent[r.agent] === 'agbt') entry.sessions += sCount;
         if (agbtMinsIdx !== -1) {
           const m = parseFloat(row[agbtMinsIdx]);
           if (!isNaN(m)) {
@@ -1402,6 +1437,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
         }
       } else if (metric === 'csat') {
         entry.csatTotal++;
+        if (sessionSourceByAgent[r.agent] === 'csat') entry.sessions++;
         if (csatScoreIdx !== -1) {
           const score = String(row[csatScoreIdx] || '').toLowerCase().trim();
           if (score === 'good' || score === '5' || score === '4' || score === 'positive') {
@@ -1411,26 +1447,13 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
           }
         }
       } else if (metric === 'breakBreach' || metric === 'break' || metric === 'breakbreach') {
-        let breached = false;
-        if (breakMetIdx !== -1) {
-          const v = String(row[breakMetIdx] || '').toLowerCase().trim();
-          if (v === 'not met' || v === 'breached' || v.includes('breach')) breached = true;
-        }
-        let exceedM = 0;
-        if (breakExceedIdx !== -1) {
-          const v = parseFloat(row[breakExceedIdx]);
-          if (!isNaN(v) && v > 0) { exceedM = v; breached = true; }
-        }
-        if (breached) entry.breakBreaches++;
-        entry.breakExceedMins += exceedM;
+        const breaks = extractBreakMetrics([Object.assign({}, r, { rows: [row] })]);
+        entry.breakBreaches += breaks.breaches;
+        entry.breakExceedMins += breaks.exceedMins;
       } else if (metric === 'lateness' || metric === 'late') {
-        if (lateIdx !== -1) {
-          const v = parseFloat(row[lateIdx]);
-          if (!isNaN(v) && v > 0) {
-            entry.latenessIncidents++;
-            entry.latenessMins += v;
-          }
-        }
+        const late = extractLatenessMetrics([Object.assign({}, r, { metric: 'lateness', rows: [row] })]);
+        entry.latenessIncidents += late.incidents;
+        entry.latenessMins += late.totalMins;
       } else if (metric === 'idle') {
         if (idleIdx !== -1) {
           const v = parseFloat(row[idleIdx]);
@@ -1445,10 +1468,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
 
   const timeline = Object.keys(dailyMap).sort().map(d => {
     const entry = dailyMap[d];
-    let sessions = 0;
-    if (entry.abstSessions > 0) sessions = entry.abstSessions;
-    else if (entry.agbtSessions > 0) sessions = entry.agbtSessions;
-    else if (entry.csatTotal > 0) sessions = entry.csatTotal;
+    const sessions = entry.sessions;
 
     let abstMins = 0;
     if (entry.abstCount > 0) {
@@ -1465,6 +1485,8 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
       displayDay: entry.displayDay,
       sessions,
       abstMins,
+      abstTotalMins: entry.abstTotalMins,
+      abstCount: entry.abstCount,
       abstSecs: Math.round(abstMins * 60),
       agbtMins: entry.agbtCount > 0 ? Math.round((entry.agbtTotalMins / entry.agbtCount) * 100) / 100 : 0,
       agbtSecs: entry.agbtCount > 0 ? Math.round((entry.agbtTotalMins / entry.agbtCount) * 60) : 0,
@@ -1485,7 +1507,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
   });
 
   const totalTimelineSessions = timeline.reduce((s, t) => s + t.sessions, 0);
-  const totalSessions = Math.max(totalTimelineSessions, agbtTickets || 0);
+  const totalSessions = agentsToAnalyze.reduce((sum, agent) => sum + agentStats[agent].sessions, 0);
   const totalLongSessions = timeline.reduce((s, t) => s + t.longSessions, 0);
   const activeDays = timeline.filter(t => t.sessions > 0 || t.abstMins > 0 || t.csatTotal > 0).length;
   const avgDailySessions = activeDays > 0 ? Math.round((totalSessions / activeDays) * 10) / 10 : 0;
@@ -1807,7 +1829,7 @@ function setCachedMetricRecord_(fileName, record) {
 function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
   rebuildSummary = rebuildSummary !== false;
 
-  const dateStr = payload.date || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
+  const dateStr = payload.date || String(payload.exportedAt || '').slice(0, 10) || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd');
   const defaultMonth = dateStr.length >= 7 ? dateStr.substring(0, 7) : Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM');
   const nowStr = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM-dd HH:mm:ss');
   const parentFolder = getOrCreateDataFolder();
@@ -1823,6 +1845,7 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
     throw makeAppError_(ERR.LOCK_TIMEOUT, 'تعذر الحصول على القفل. أعد المحاولة.');
   }
 
+  try {
   // 1. استخراج وتطبيع السجلات الواردة بدقة
   const rawResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : (payload.header ? [payload] : []));
   const incomingNormalized = [];
@@ -1861,6 +1884,11 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
       });
     }
   });
+
+  // Summary-only exports still need a destination month.
+  if (!Object.keys(monthBuckets).length && Array.isArray(payload.agents) && payload.agents.length) {
+    monthBuckets[defaultMonth] = [];
+  }
 
   let totalDrillCount = 0;
   let totalTicketsCount = 0;
@@ -1923,10 +1951,6 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
           finalRecord.date = dateStr;
           finalRecord.savedAt = nowStr;
           finalRecord.month = monthKey;
-          monthUpdatedRecords.push(finalRecord);
-          totalDrillCount++;
-          totalTicketsCount += finalRecord.rows.length;
-
           const fileJson = JSON.stringify(finalRecord);
           if (targetFile) {
             targetFile.setContent(fileJson);
@@ -1934,6 +1958,9 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
             monthDrillsFolder.createFile(fileName, fileJson, MimeType.PLAIN_TEXT);
           }
           setCachedMetricRecord_(cacheKey, finalRecord);
+          monthUpdatedRecords.push(finalRecord);
+          totalDrillCount++;
+          totalTicketsCount += finalRecord.rows.length;
         }
       } catch (metricErr) {
         saveFailureCount++;
@@ -1964,7 +1991,9 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
             monthUpdatedRecords.push(parsed);
             setCachedMetricRecord_(cacheKey, parsed);
           }
-        } catch (e) {}
+        } catch (e) {
+          throw makeAppError_(ERR.CONSISTENCY_ERROR, 'تعذر قراءة أحد مقاييس الشهر؛ لم يتم استبدال الملخص ببيانات ناقصة.');
+        }
       }
     }
 
@@ -2035,7 +2064,7 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
 
         // Break Breach: drill > بطاقة الملخص > فارغ (null إذا كانت 0 ليظهر كشرطة)
         let breakVal = null;
-        if (agStat.hasBreak && agStat.breakBreaches !== undefined) breakVal = agStat.breakBreaches > 0 ? String(agStat.breakBreaches) : null;
+        if (agStat.hasBreak && agStat.breakBreaches !== undefined) breakVal = String(agStat.breakBreaches);
         else if (metaHasVal(meta.breakBreach)) breakVal = String(meta.breakBreach);
 
         // Lateness (دقائق): drill > بطاقة الملخص > فارغ
@@ -2074,6 +2103,11 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
           recordsCount: agStat.recordsCount || 0,
           rowsCount: agStat.rowsCount || 0,
           sessions: (agStat.sessions !== undefined ? agStat.sessions : null),
+          longSessions: agStat.longSessions,
+          agbtTotalMins: agStat.agbtTotalMins,
+          agbtCount: agStat.agbtCount,
+          abstTotalMins: agStat.abstTotalMins,
+          abstCount: agStat.abstCount,
           updatedAt: Utilities.formatDate(new Date(), 'Asia/Riyadh', 'HH:mm')
         };
       });
@@ -2211,8 +2245,6 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
   clearCachedAgentsChart_();
   clearTicketSessionsIndex_();
 
-  if (writeLockAcquired) { try { writeLock.releaseLock(); } catch (e) {} }
-
   return {
     success: true,
     partial: !rebuildSummary || saveFailureCount > 0,
@@ -2223,6 +2255,9 @@ function savePayloadToMicroPartitionedDrive_(payload, rebuildSummary) {
     failedCount: saveFailureCount,
     date: dateStr
   };
+  } finally {
+    if (writeLockAcquired) { try { writeLock.releaseLock(); } catch (e) {} }
+  }
 }
 
 /**
@@ -2719,18 +2754,26 @@ function getDashboardDataFromSheetImpl_(targetMonth) {
       agents = agents.filter(a => !banned.has(String(a.email || '').toLowerCase().trim()));
     }
     // Data minimization: نُرسل فقط حقول العرض التي تستخدمها الواجهة فعليًا
-    // (حذف csatGood/csatBad/csatTotal/recordsCount/rowsCount/updatedAt من الاستجابة فقط — تبقى في التخزين)
+    // Keep aggregate counts used by summary cards; omit internal storage metadata.
     res.agents = agents.map(a => ({
       date: a.date,
       month: a.month,
       name: a.name,
       email: a.email,
       csat: a.csat,
+      csatGood: a.csatGood,
+      csatBad: a.csatBad,
+      csatTotal: a.csatTotal,
       agbt: a.agbt,
       abst: a.abst,
       breakBreach: a.breakBreach,
       breakExceedMins: a.breakExceedMins,
       sessions: a.sessions,
+      longSessions: a.longSessions,
+      agbtTotalMins: a.agbtTotalMins,
+      agbtCount: a.agbtCount,
+      abstTotalMins: a.abstTotalMins,
+      abstCount: a.abstCount,
       lateness: a.lateness,
       idle: a.idle,
       productivity: a.productivity
@@ -2798,17 +2841,31 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex, metricFilter) {
   const prefix = getAgentFileSlug(email) + '_';
   const records = [];
   const filterNeedle = metricFilter ? String(metricFilter).toLowerCase().trim() : null;
+  const matchesFile = name => {
+    const metrics = filterNeedle ? [filterNeedle] : IMPORT_ALLOWED_METRICS;
+    return metrics.some(metric => name === getAgentMetricFileSlug(email, metric) + '.json');
+  };
+  const addRecord = (content, name, legacy) => {
+    if (!content || !content.trim()) return;
+    const record = normalizeRecord(JSON.parse(content), 0, name);
+    if (record.agent !== String(email).trim().toLowerCase()) return;
+    if (filterNeedle && record.metric !== filterNeedle) return;
+    if (legacy && month) record.rows = record.rows.filter(row => {
+      const day = extractRowDate(row, record.header);
+      return !day || day.slice(0, 7) === month;
+    });
+    records.push(record);
+  };
 
   // مسار مُحسّن: فهرس مُبنى بتعداد واحد لمجلد الشهر (يمنع Folder Scan لكل وكيل)
   if (prebuiltIndex && prebuiltIndex.filesBySlug) {
     const files = prebuiltIndex.filesBySlug.get(getAgentFileSlug(email)) || [];
     files.forEach(f => {
       const name = f.getName();
-      if (name.indexOf(prefix) !== 0) return;
-      if (filterNeedle && !name.toLowerCase().includes(filterNeedle)) return;
+      if (!matchesFile(name)) return;
       try {
         const content = f.getBlob().getDataAsString();
-        if (content && content.trim()) records.push(normalizeRecord(JSON.parse(content), 0, name));
+        addRecord(content, name, false);
       } catch (e) { throw e; }
     });
     // إن لم نجد سجلات في الفهرس (مثلاً بيانات الشهر الحالي في legacy) نكمل للمسار العادي مع fallback
@@ -2826,13 +2883,10 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex, metricFilter) {
       while (files.hasNext()) {
         const f = files.next();
         const name = f.getName();
-        if (!name.endsWith('.json') || name.indexOf(prefix) !== 0) continue;
-        if (filterNeedle && !name.toLowerCase().includes(filterNeedle)) continue;
+        if (!matchesFile(name)) continue;
         try {
           const content = f.getBlob().getDataAsString();
-          if (content && content.trim()) {
-            records.push(normalizeRecord(JSON.parse(content), 0, name));
-          }
+          addRecord(content, name, false);
         } catch (e) { throw e; }
       }
     }
@@ -2858,12 +2912,10 @@ function readAgentRecordsForMonth(email, month, prebuiltIndex, metricFilter) {
       while (files.hasNext()) {
         const f = files.next();
         const name = f.getName();
-        if (!name.endsWith('.json') || name.indexOf(prefix) !== 0) continue;
+        if (!matchesFile(name)) continue;
         try {
           const content = f.getBlob().getDataAsString();
-          if (content && content.trim()) {
-            records.push(normalizeRecord(JSON.parse(content), 0, name));
-          }
+          addRecord(content, name, true);
         } catch (e) { throw e; }
       }
     }
@@ -3906,9 +3958,11 @@ function buildWeeklyPeriods(lang, targetMonth) {
   return periods;
 }
 
-function buildMonthlyPeriods(count) {
+function buildMonthlyPeriods(count, targetMonth) {
   const periods = [];
-  const now = new Date();
+  const now = isValidMonthFormat(String(targetMonth || ''))
+    ? new Date(Number(targetMonth.slice(0, 4)), Number(targetMonth.slice(5, 7)) - 1, 1)
+    : new Date();
   const n = (count || 6);
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -3942,7 +3996,7 @@ function computePeriodValue(agg, m) {
     return Math.round((agg.csatGood / total) * 1000) / 10;
   }
   if (m === 'abst') {
-    return agg.abstCount > 0 ? Math.round((agg.abstSum / agg.abstCount) * 10) / 10 : null;
+    return agg.abstCount > 0 ? Math.round((agg.abstSum / agg.abstCount) * 100) / 100 : null;
   }
   if (m === 'sessions') {
     return agg.sessions;
@@ -3975,7 +4029,7 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
     }
 
     // استرداد سريع من الكاش (يمنع إعادة قراءة كل ملفات Drive في كل مرة)
-    const cacheKey = 'PERIOD_TABLE_v2_' + m + '_' + type + '_' + langKey + (monthKey ? '_' + monthKey : '');
+    const cacheKey = 'PERIOD_TABLE_v3_' + getAgentsChartCacheVersion() + '_' + m + '_' + type + '_' + langKey + (monthKey ? '_' + monthKey : '');
     try {
       const cachedRaw = CacheService.getScriptCache().get(cacheKey);
       if (cachedRaw) {
@@ -3989,8 +4043,9 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
       return { success: false, agents: [], periods: [], code: overview && overview.code,
         message: (overview && overview.message) || 'تعذر تحميل ملخص الشهر.' };
     }
-    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents : [];
-    const periods = (type === 'monthly') ? buildMonthlyPeriods(6) : buildWeeklyPeriods(lang, targetMonth);
+    const agents = (overview && Array.isArray(overview.agents)) ? overview.agents.slice() : [];
+    const resolvedMonth = overview.month || monthKey || getMonthsIndex().currentMonth;
+    const periods = (type === 'monthly') ? buildMonthlyPeriods(6, resolvedMonth) : buildWeeklyPeriods(lang, resolvedMonth);
 
     // تعداد واحد لمجلد drills للشهر المحدد ثم استخدامه لكل الوكلاء (يمنع N+1 Folder Scans)
     let indexMonth = monthKey;
@@ -3998,17 +4053,33 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
       try { const idx = getMonthsIndex(); indexMonth = idx.currentMonth || Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM'); }
       catch (e) { indexMonth = Utilities.formatDate(new Date(), 'Asia/Riyadh', 'yyyy-MM'); }
     }
-    const drillsIndex = enumerateMonthDrills_(indexMonth);
+    const monthsToRead = type === 'monthly' ? periods.map(p => p.key) : [indexMonth];
+    const indexes = {};
+    const knownAgents = new Set(agents.map(a => String(a.email).toLowerCase()));
+    for (const periodMonth of monthsToRead) {
+      indexes[periodMonth] = enumerateMonthDrills_(periodMonth);
+      if (type === 'monthly' && periodMonth !== resolvedMonth) {
+        const history = getOverviewData(periodMonth);
+        if (!history || history.success === false) return { success: false, agents: [], periods: [], message: 'تعذر تحميل ملخص الشهر ' + periodMonth };
+        (history.agents || []).forEach(a => {
+          const email = String(a.email).toLowerCase();
+          if (!knownAgents.has(email)) { knownAgents.add(email); agents.push(a); }
+        });
+      }
+    }
 
-    const metricFilter = (m === 'csat') ? 'csat' : ((m === 'abst' || m === 'sessions') ? 'abst' : null);
+    const metricFilter = (m === 'csat') ? 'csat' : (m === 'abst' ? 'abst' : null);
     const rows = [];
     for (const a of agents) {
-      const tl = getAgentDailyTimeline(a.email, false, null, null, targetMonth, drillsIndex, metricFilter);
-      if (!tl || tl.success === false) {
-        return { success: false, agents: [], periods: [], code: tl && tl.code,
-          message: (tl && (tl.message || tl.error)) || 'تعذر تحميل بيانات الوكيل.' };
+      const days = [];
+      for (const periodMonth of monthsToRead) {
+        const tl = getAgentDailyTimeline(a.email, false, null, null, periodMonth, indexes[periodMonth], metricFilter);
+        if (!tl || tl.success === false) {
+          return { success: false, agents: [], periods: [], code: tl && tl.code,
+            message: (tl && (tl.message || tl.error)) || 'تعذر تحميل بيانات الوكيل.' };
+        }
+        days.push(...(Array.isArray(tl.days) ? tl.days : []));
       }
-      const days = (tl && Array.isArray(tl.days)) ? tl.days : [];
       const agg = {};
       for (const d of days) {
         const key = periodKeyForDay(d.day, type, periods);
@@ -4017,8 +4088,8 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
         agg[key].csatGood += Number(d.csatGood) || 0;
         agg[key].csatBad += Number(d.csatBad) || 0;
         agg[key].sessions += Number(d.sessions) || 0;
-        const abst = Number(d.abstMins) || 0;
-        if (abst > 0) { agg[key].abstSum += abst; agg[key].abstCount++; }
+        agg[key].abstSum += Number(d.abstTotalMins) || 0;
+        agg[key].abstCount += Number(d.abstCount) || 0;
       }
       const values = {};
       for (const p of periods) {
@@ -4445,9 +4516,16 @@ function migrateExistingDataToMonthlyPartitions() {
         csatGood: st.csatGood || 0,
         csatBad: st.csatBad || 0,
         csatTotal: st.csatTotal || 0,
-        agbt: (st.hasAgbt && st.agbtDisplay) ? st.agbtDisplay : null,
-        abst: (st.hasAbst && st.abstAvg) ? st.abstAvg : null,
+        agbt: st.hasAgbt ? st.agbtAvg : null,
+        abst: st.hasAbst ? st.abstAvgMins : null,
         breakBreach: st.hasBreak ? String(st.breakBreaches) : null,
+        breakExceedMins: st.breakExceedMins,
+        sessions: st.sessions || 0,
+        longSessions: st.longSessions,
+        agbtTotalMins: st.agbtTotalMins,
+        agbtCount: st.agbtCount,
+        abstTotalMins: st.abstTotalMins,
+        abstCount: st.abstCount,
         lateness: st.hasLateness ? st.latenessMins : null,
         idle: (st.hasIdle && st.idleHours !== null && st.idleHours !== undefined) ? String(st.idleHours) : null,
         productivity: null,
@@ -4655,7 +4733,10 @@ function rebuildMonthSummaryFromDrills(targetMonth) {
           records.push(rec);
           rowCount += (rec.rows || []).length;
         }
-      } catch (e) { /* تجاهل ملف تالف */ }
+      } catch (e) {
+        return { success: false, code: ERR.CONSISTENCY_ERROR, month: month,
+          message: 'تعذر قراءة أحد ملفات الشهر؛ تم الاحتفاظ بالملخص السابق.' };
+      }
       filesProcessed++;
     }
 
@@ -4672,9 +4753,16 @@ function rebuildMonthSummaryFromDrills(targetMonth) {
         csatGood: st.csatGood || 0,
         csatBad: st.csatBad || 0,
         csatTotal: st.csatTotal || 0,
-        agbt: (st.hasAgbt && st.agbtDisplay) ? st.agbtDisplay : null,
-        abst: (st.hasAbst && st.abstAvg) ? st.abstAvg : null,
+        agbt: st.hasAgbt ? st.agbtAvg : null,
+        abst: st.hasAbst ? st.abstAvgMins : null,
         breakBreach: st.hasBreak ? String(st.breakBreaches) : null,
+        breakExceedMins: st.breakExceedMins,
+        sessions: st.sessions || 0,
+        longSessions: st.longSessions,
+        agbtTotalMins: st.agbtTotalMins,
+        agbtCount: st.agbtCount,
+        abstTotalMins: st.abstTotalMins,
+        abstCount: st.abstCount,
         lateness: st.hasLateness ? st.latenessMins : null,
         idle: (st.hasIdle && st.idleHours !== null && st.idleHours !== undefined) ? String(st.idleHours) : null,
         productivity: null,
@@ -4737,6 +4825,9 @@ function rebuildMonthSummaryFromDrills(targetMonth) {
     else mFolder.createFile(CONFIG.META_FILE_NAME || 'meta.json', metaJson, MimeType.PLAIN_TEXT);
 
     clearCachedOverview_(month);
+    monthAnalytics.uniqueAgents.forEach(email => clearCachedAgentTimeline_(email, false, month));
+    clearCachedAgentsChart_();
+    clearCachedPeriodTables_();
     logEvent_('REBUILD', { status: 'SUCCESS', month: month, drills: records.length, rows: rowCount, actor: getCurrentUserEmail() });
     return { success: true, month: month, drills: records.length, rows: rowCount };
   } catch (err) {

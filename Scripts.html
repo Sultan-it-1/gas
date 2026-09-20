@@ -2626,7 +2626,9 @@
                         .withSuccessHandler((res) => {
                             btnSave.disabled = false;
                             if (res && res.success) {
-                                showAdminStatus('success', I18N.t('adminSaveSuccess', { agents: (res.agentsCount || 0), drills: (res.drillCount || 0), tickets: (res.ticketsCount || 0) }));
+                                showAdminStatus(res.partial ? 'error' : 'success', res.partial
+                                    ? (res.message || I18N.t('adminSaveFail'))
+                                    : I18N.t('adminSaveSuccess', { agents: (res.agentsCount || 0), drills: (res.drillCount || 0), tickets: (res.ticketsCount || 0) }));
                                 // تحديث أرقام الداشبورد فوراً!
                                 setTimeout(loadSheetData, 500);
                             } else {
@@ -3123,30 +3125,34 @@
         if (!bar) return;
 
         let totalCsat = 0, countCsat = 0;
+        let totalGood = 0, totalEvaluated = 0;
         let totalLate = 0;
         let totalBreaches = 0;
         let totalBreachMins = 0;
-        let agbtSecsSum = 0, agbtCount = 0;
-        let abstSecsSum = 0, abstCount = 0;
+        let agbtMinsSum = 0, agbtCount = 0;
+        let abstMinsSum = 0, abstCount = 0;
         let idleHoursSum = 0;
 
         AppState.agents.forEach(a => {
-            if (a.csat > 0) { totalCsat += a.csat; countCsat++; }
-            totalLate += a.lateness || 0;
+            if (!isBlank(a.csat) && Number.isFinite(Number(a.csat))) { totalCsat += Number(a.csat); countCsat++; }
+            totalGood += Number(a.csatGood) || 0;
+            totalEvaluated += (Number(a.csatGood) || 0) + (Number(a.csatBad) || 0);
+            totalLate += Number(a.lateness) || 0;
             totalBreaches += parseInt(a.breakBreach, 10) || 0;
             totalBreachMins += Number(a.breakExceedMins) || 0;
-            const secs = parseTimeToSeconds(a.agbt);
-            if (secs > 0) { agbtSecsSum += secs; agbtCount++; }
-            const abstSecs = parseTimeToSeconds(a.abst);
-            if (abstSecs > 0) { abstSecsSum += abstSecs; abstCount++; }
+            if (a.agbtCount > 0) { agbtMinsSum += Number(a.agbtTotalMins); agbtCount += Number(a.agbtCount); }
+            else if (!isBlank(a.agbt)) { agbtMinsSum += parseDurationValueToMinutes(a.agbt); agbtCount++; }
+            if (a.abstCount > 0) { abstMinsSum += Number(a.abstTotalMins); abstCount += Number(a.abstCount); }
+            else if (!isBlank(a.abst)) { abstMinsSum += parseDurationValueToMinutes(a.abst); abstCount++; }
             const idleH = parseFloat(a.idle);
             if (!isNaN(idleH)) idleHoursSum += idleH;
         });
 
-        const avgCsat = countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : '—';
+        const avgCsat = totalEvaluated > 0 ? (totalGood / totalEvaluated * 100).toFixed(1)
+            : countCsat > 0 ? (totalCsat / countCsat).toFixed(1) : '—';
         // احترام Decimal ↔ Time للـAGBT/ABST (نفس سلوك بطاقات الوكيل)
-        const avgAgbtText = agbtCount > 0 ? formatDuration(Math.round(agbtSecsSum / agbtCount) / 60) : '—';
-        const avgAbstText = abstCount > 0 ? formatDuration(Math.round(abstSecsSum / abstCount) / 60) : '—';
+        const avgAgbtText = agbtCount > 0 ? formatDuration(agbtMinsSum / agbtCount) : '—';
+        const avgAbstText = abstCount > 0 ? formatDuration(abstMinsSum / abstCount) : '—';
 
         // تلوين بطاقة CSAT حسب التارجت: 90%+ أخضر، 75%-89.9% أصفر، أقل من 75% أحمر
         const csatNum = parseFloat(avgCsat);
@@ -3166,7 +3172,7 @@
         }
 
         bar.innerHTML = `
-            <div class="summary-pill" data-metric="csat" style="--mc:${csatColor}; --mc-soft:${csatSoft};"><span class="pill-label">${I18N.t('teamAvgCsatLabel')}</span> <b class="pill-value" style="color:${csatColor};">${avgCsat}%</b></div>
+            <div class="summary-pill" data-metric="csat" style="--mc:${csatColor}; --mc-soft:${csatSoft};"><span class="pill-label">${I18N.t('teamAvgCsatLabel')}</span> <b class="pill-value" style="color:${csatColor};">${avgCsat === '—' ? '—' : avgCsat + '%'}</b></div>
             <div class="summary-pill" data-metric="agbt"><span class="pill-label">${I18N.t('kpiAgbtTitle')}</span> <b class="pill-value">${avgAgbtText}</b></div>
             <div class="summary-pill" data-metric="abst"><span class="pill-label">ABST:</span> <b class="pill-value">${avgAbstText}</b></div>
             <div class="summary-pill" data-metric="breakBreach"><span class="pill-label">${I18N.t('kpiBreachTitle')}</span> <b class="pill-value">${breachExceedText(totalBreachMins)}</b><span class="pill-sub">${breachCountText(totalBreaches)}</span></div>
@@ -4127,7 +4133,7 @@
         container.innerHTML = '<div class="chart-drilldown-state chart-drilldown-loading">⏳ ' + escPeriod(I18N.t('drillLoading')) + '</div>';
 
         // 1. Check local preview mock tickets
-        if (typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_TICKETS__ === 'function') {
+        if (!getStoredRawJson() && typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_TICKETS__ === 'function') {
             const mockRes = window.__LOCAL_PREVIEW_GET_TICKETS__(dateStr, email, metric);
             if (mockRes && Array.isArray(mockRes.rows) && mockRes.rows.length > 0) {
                 let rows = mockRes.rows;
@@ -5349,6 +5355,7 @@
      * يعيد مصفوفة فارغة إذا لم توجد بيانات، ولا يختلق أرقاماً من عندنا.
      */
     function computeAgentDaysLocally(email, byShift) {
+        if (window.__LOCAL_PREVIEW_REAL__) return window.__LOCAL_PREVIEW_REAL__.timeline(email, AppState.selectedMonth, byShift);
         const dailyMap = {};
         const shiftTsList = [];
         function entryFor(day) {
@@ -5776,6 +5783,10 @@
         const agents = Array.isArray(AppState.agents) ? AppState.agents : [];
         return agents.map(a => {
             let v = null;
+            const rawValue = metric === 'breakBreach' ? a.breakExceedMins : a[metric];
+            if (rawValue === null || rawValue === undefined || rawValue === '') {
+                return { email: a.email, name: a.name || a.email, value: null };
+            }
             if (metric === 'csat') v = Number(a.csat);
             else if (metric === 'agbt') v = parseDurationValueToMinutes(a.agbt);
             else if (metric === 'abst') v = parseDurationValueToMinutes(a.abst);
@@ -6357,6 +6368,12 @@
     }
 
     function loadLocalPreviewMode() {
+        if (window.__LOCAL_PREVIEW_REAL__) {
+            const data = window.__LOCAL_PREVIEW_REAL__.build(JSON.parse(getStoredRawJson()), AppState.selectedMonth);
+            handleSheetDataSuccess(data);
+            message(I18N.currentLang === 'ar' ? 'معاينة محلية من صفوف ملف التصدير؛ ليست اتصالاً مباشراً بـ Drive.' : 'Local export preview; not a live Drive connection.');
+            return;
+        }
         // 1. Check for real local saved data first
         try {
             if (typeof window !== 'undefined' && window.__LOCAL_DASHBOARD_DATA_MEM__) {
@@ -6414,6 +6431,7 @@
     }
 
     function buildLocalDashboardData(payload) {
+        if (window.__LOCAL_PREVIEW_REAL__) return window.__LOCAL_PREVIEW_REAL__.build(payload, AppState.selectedMonth);
         const rawResults = payload.results || (Array.isArray(payload) && payload[0]?.metric ? payload : (payload.header ? [payload] : []));
         if (!rawResults || !rawResults.length) {
             throw new Error('لم يتم العثور على أي مقاييس صالحة في ملف النتائج.');
