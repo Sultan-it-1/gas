@@ -1192,7 +1192,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
   for (const rec of idleRecords) {
     const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
     // مطابق لمنطق agent-dashboard-data.js: أول عمود يحتوي idle أو not_working
-    const idleColIdx = h.findIndex(col => col.indexOf('idle') !== -1 || col.indexOf('not_working') !== -1);
+    const idleColIdx = h.findIndex(col => col === 'time_not_working_h' || col === 'time_not_working_h_shift_adjusted');
 
     for (const row of rec.rows || []) {
       if (idleColIdx !== -1) {
@@ -1283,7 +1283,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     let agIdleSum = 0, agIdleCount = 0;
     for (const r of agRecs.filter(r => r.metric === 'idle')) {
       const h = (r.header || []).map(c => String(c).toLowerCase().trim());
-      const iIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
+      const iIdx = h.findIndex(c => c === 'time_not_working_h' || c === 'time_not_working_h_shift_adjusted');
       for (const row of r.rows || []) {
         if (iIdx !== -1) {
           const v = parseFloat(row[iIdx]);
@@ -1332,7 +1332,8 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
       breakExceedMins: hasBreak ? agBreak.exceedMins : null,
       latenessIncidents: agLateness.incidents,
       latenessMins: agLateness.totalMins,
-      idleHours: agIdleCount > 0 ? Math.round(agIdleSum * 100) / 100 : null
+      // Agent card matches the sheet's per-shift average; team overview keeps totalHours.
+      idleHours: agIdleCount > 0 ? Math.round((agIdleSum / agIdleCount) * 100) / 100 : null
     };
   }
 
@@ -1379,7 +1380,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     const breakMetIdx = findColIndex(h, 'break exceed', 'break_exceed', 'status');
     const breakExceedIdx = findColIndex(h, 'break exceed time', 'exceed_time', 'exceed_mins', 'exceed');
     const lateIdx = findColIndex(h, 'exceed mins', 'exceed_mins', 'lateness', 'late_mins', 'delay_mins', 'delay');
-    const idleIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
+    const idleIdx = h.findIndex(c => c === 'time_not_working_h' || c === 'time_not_working_h_shift_adjusted');
 
     const rows = r.rows || [];
     for (let ri = 0; ri < rows.length; ri++) {
@@ -2753,6 +2754,28 @@ function getDashboardDataFromSheetImpl_(targetMonth) {
     if (banned.size > 0) {
       agents = agents.filter(a => !banned.has(String(a.email || '').toLowerCase().trim()));
     }
+    // Old summary files may omit these fields although their drill files exist.
+    // Recover only missing values, from this agent/month, without inventing zeros
+    // or rewriting the stored summary during a read.
+    const missing = value => value === undefined || value === null || /^(?:\s*|[-—–])$/.test(String(value));
+    const fields = [['agbt', 'agbt', 'agbtAvg'], ['abst', 'abst', 'abstAvgMins'], ['breakExceedMins', 'breakbreach', 'breakExceedMins']];
+    const recovered = [];
+    for (const original of agents) {
+      const a = Object.assign({}, original);
+      for (const [field, metric, statField] of fields) {
+        if (!missing(a[field])) continue;
+        const detail = getAgentDetailData(a.email, metric, res.month || targetMonth);
+        if (!detail || detail.success === false) return { success: false, agents: [], month: res.month,
+          message: (detail && (detail.error || detail.message)) || 'تعذر استرجاع المقياس من ملف التفاصيل.' };
+        if (!detail.rows || !detail.rows.length) continue;
+        const record = normalizeRecord({ agent: a.email, metric, header: detail.header, rows: detail.rows }, 0, 'summary-recovery');
+        const stat = calculateAnalytics([record]).agentStats[record.agent];
+        if (stat && stat[statField] !== null && stat[statField] !== undefined) a[field] = stat[statField];
+        if (metric === 'breakbreach' && stat) a.breakBreach = String(stat.breakBreaches);
+      }
+      recovered.push(a);
+    }
+    agents = recovered;
     // Data minimization: نُرسل فقط حقول العرض التي تستخدمها الواجهة فعليًا
     // Keep aggregate counts used by summary cards; omit internal storage metadata.
     res.agents = agents.map(a => ({

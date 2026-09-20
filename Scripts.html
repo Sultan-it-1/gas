@@ -1151,9 +1151,12 @@
         return Number(value).toFixed(1);
     }
     function fmtTimeStr(value) {
-        if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
-        if (AppState.timeMode === 'time') return formatDuration(Number(value), 'time');
-        return Number(value).toFixed(2);
+        const mins = typeof parseDurationValueToMinutes === 'function'
+            ? parseDurationValueToMinutes(value)
+            : (typeof value === 'string' && value.includes(':')
+                ? ((parseFloat(value.split(':')[0]) || 0) + (parseFloat(value.split(':')[1]) || 0) / 60)
+                : (value === null || value === undefined || value === '' ? null : Number(value)));
+        return formatDuration(mins);
     }
     function fmtHours(value) {
         if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
@@ -3767,10 +3770,12 @@
 
     // Break Exceed = المقياس الأساسي (دقائق). يتبع المفتاح العام Decimal ↔ Time.
     function breachExceedText(value) {
-        if (isBlank(value)) return '—';
-        const n = Number(value);
-        if (!isFinite(n)) return '—';
-        return formatDuration(n);
+        const mins = typeof parseDurationValueToMinutes === 'function'
+            ? parseDurationValueToMinutes(value)
+            : (typeof value === 'string' && value.includes(':')
+                ? ((parseFloat(value.split(':')[0]) || 0) + (parseFloat(value.split(':')[1]) || 0) / 60)
+                : (value === null || value === undefined || value === '' ? null : Number(value)));
+        return formatDuration(mins);
     }
 
     // معلومة إضافية: كم مرة حصل تجاوز للبريك
@@ -5618,7 +5623,7 @@
                 const breakMetIdx = findHeaderCol(h, 'break exceed', 'break_exceed', 'status');
                 const breakExceedIdx = findHeaderCol(h, 'break exceed time', 'exceed_time', 'exceed_mins', 'exceed');
                 const lateIdx = findHeaderCol(h, 'exceed mins', 'exceed_mins', 'lateness', 'late_mins', 'delay_mins', 'delay');
-                const idleIdx = h.findIndex(c => c.indexOf('idle') !== -1 || c.indexOf('not_working') !== -1);
+                const idleIdx = h.findIndex(c => c === 'time_not_working_h' || c === 'time_not_working_h_shift_adjusted');
 
                 rec.rows.forEach((row, rowIdx) => {
                     const day = byShift
@@ -5871,7 +5876,8 @@
         const chartW = width - padX * 2;
         const chartH = height - padTop - padBottom;
 
-        const metricIsDuration = (metric === 'abst' || metric === 'agbt' || metric === 'lateness');
+        // ABST/AGBT are time durations; lateness is already stored/displayed as minutes.
+        const metricIsDuration = (metric === 'abst' || metric === 'agbt');
         const metricIsIdle = (metric === 'idle');
         const metricIsPercent = (metric === 'csat');
         const isDecimalMode = (AppState.timeMode || 'decimal') === 'decimal';
@@ -6632,7 +6638,7 @@
             let idleHoursSum = 0, idleCount = 0;
             recs.filter(r => r.metric === 'idle').forEach(r => {
                 const h = r.header.map(c => String(c).toLowerCase().trim());
-                const iIdx = findHeaderCol(h, 'time_not_working_h', 'time_without_tickets_h', 'idle');
+                const iIdx = findHeaderCol(h, 'time_not_working_h', 'time_not_working_h_shift_adjusted');
                 r.rows.forEach(row => {
                     if (iIdx !== -1) {
                         const m = parseFloat(row[iIdx]);
