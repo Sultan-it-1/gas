@@ -733,6 +733,15 @@
                 </details>
             </div>
 
+            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="btnAuditDrive" class="admin-btn-ghost" style="padding:7px 16px; font-size:12px; font-weight:700; color:#a78bfa; background:rgba(167,139,250,0.12); border:1px solid rgba(167,139,250,0.4); border-radius:8px; cursor:pointer;">🔎 فحص حجم وسلامة بيانات Drive</button>
+                    <button type="button" id="btnRepairDrive" class="admin-btn-ghost" style="display:none; padding:7px 16px; font-size:12px; font-weight:700; color:#fbbf24; background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.4); border-radius:8px; cursor:pointer;">🛠️ إصلاح البيانات</button>
+                    <span style="font-size:11px; color:var(--muted);">قراءة فقط — يحسب الحجم ويتحقق من ملفات JSON والصفوف</span>
+                </div>
+                <pre id="driveAuditResult" style="display:none; white-space:pre-wrap; margin:10px 0 0; padding:10px; border-radius:8px; font:11px/1.6 monospace; background:rgba(15,23,42,.7); color:var(--muted);"></pre>
+            </div>
+
         </div>
     </div>
 </div>

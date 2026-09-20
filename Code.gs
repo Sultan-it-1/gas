@@ -3004,7 +3004,7 @@ function getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour
     }
 
     // كاش وضع "حسب اليوم" فقط (عند عدم وجود فلتر مقياس جزئي)
-    if (!byShift && !metricFilter) {
+    if (!byShift) {
       const cached = getCachedAgentTimeline(email, false, month);
       if (cached) {
         return { success: true, email: email, days: cached, month: month };
@@ -3146,15 +3146,17 @@ function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
     // تعداد واحد لمجلد drills للشهر ثم معالجة الوكلاء من الفهرس (يمنع N+1 Folder Scans)
     const drillsIndex = enumerateMonthDrills_(month);
 
+    // ABST needs only session records; avoid opening all other metric files.
+    const computedKeys = m === 'abst' ? ['abst'] : CHART_METRIC_KEYS;
     // calculateAnalytics already computes every metric: reuse this one Drive pass
     // for all metric tabs instead of reopening the same files for each tab.
     const resultsByMetric = {};
-    CHART_METRIC_KEYS.forEach(key => { resultsByMetric[key] = []; });
+    computedKeys.forEach(key => { resultsByMetric[key] = []; });
     for (const a of agents) {
       const email = String(a.email || '').trim();
       if (!email) continue;
       let records = [];
-      records = readAgentRecordsForMonth(email, month, drillsIndex);
+      records = readAgentRecordsForMonth(email, month, drillsIndex, m === 'abst' ? 'abst' : null);
       if (start || end) records = filterRecordsToDateRange(records, start, end);
       const analytics = calculateAnalytics(records);
       let stat = analytics.agentStats[email];
@@ -3162,7 +3164,7 @@ function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
         const k = Object.keys(analytics.agentStats).find(k => k.toLowerCase() === email.toLowerCase());
         if (k) stat = analytics.agentStats[k];
       }
-      CHART_METRIC_KEYS.forEach(key => {
+      computedKeys.forEach(key => {
         const entry = { email: email, name: a.name || email, value: getAgentMetricValue(stat, key) };
         if (key === 'breakBreach') entry.breaches = (stat && stat.breakBreaches) || 0;
         resultsByMetric[key].push(entry);
@@ -3170,7 +3172,7 @@ function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
     }
 
     // ترتيب تنازلي حسب القيمة (القيم الفارغة في النهاية)
-    CHART_METRIC_KEYS.forEach(key => resultsByMetric[key].sort((x, y) => {
+    computedKeys.forEach(key => resultsByMetric[key].sort((x, y) => {
       const vx = (x.value === null || x.value === undefined) ? -Infinity : Number(x.value);
       const vy = (y.value === null || y.value === undefined) ? -Infinity : Number(y.value);
       return vy - vx;
@@ -3188,7 +3190,7 @@ function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
     };
     try {
       const cache = CacheService.getScriptCache();
-      CHART_METRIC_KEYS.forEach(key => {
+      computedKeys.forEach(key => {
         const json = JSON.stringify(Object.assign({}, data, { metric: key, agents: resultsByMetric[key] }));
         if (json.length < 90000) cache.put(chartCacheKey(key), json, 600);
       });
@@ -3845,6 +3847,83 @@ function getAdminStats() {
   }
 }
 
+// Read-only audit of the configured Drive data folder. No files are changed.
+function getDriveDataAudit() {
+  try {
+    if (!isCurrentUserAdmin()) return { success: false, code: 'ADMIN_REQUIRED', message: 'غير مصرح لك.' };
+    const root = getOrCreateDataFolder();
+    const result = { success: true, healthy: true, rootName: root.getName(), sizeBytes: 0, fileCount: 0, folderCount: 0, jsonFileCount: 0, rowCount: 0, drillRowCount: 0, summaryFileCount: 0, months: [], agents: [], metrics: [], invalidCount: 0, invalidFiles: [], checkedAt: new Date().toISOString() };
+    const months = {}, agents = {}, metrics = {};
+    const addInvalid = (path, reason) => { result.healthy = false; result.invalidCount++; if (result.invalidFiles.length < 50) result.invalidFiles.push({ path: path, reason: String(reason || 'Invalid data') }); };
+    const walk = (folder, path) => {
+      result.folderCount++;
+      if (/^\d{4}-\d{2}$/.test(folder.getName()) && !folder.getFilesByName(CONFIG.SUMMARY_FILE_NAME).hasNext()) {
+        addInvalid(path + '/' + CONFIG.SUMMARY_FILE_NAME, 'ملخص الشهر مفقود');
+      }
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const file = files.next(), name = file.getName(), filePath = path + '/' + name;
+        result.fileCount++;
+        let text = '';
+        try { const blob = file.getBlob(); text = blob.getDataAsString(); result.sizeBytes += (blob.getBytes ? blob.getBytes().length : Utilities.newBlob(text).getBytes().length); } catch (e) { addInvalid(filePath, 'تعذر قراءة الملف: ' + safeError_(e)); continue; }
+        if (!/\.json$/i.test(name)) continue;
+        result.jsonFileCount++;
+        let data;
+        try { data = JSON.parse(text); } catch (e) { addInvalid(filePath, 'JSON غير صالح'); continue; }
+        if (/summary\.json$/i.test(name) || /summary_overview\.json$/i.test(name)) {
+          result.summaryFileCount++;
+          if (data && Array.isArray(data.agents)) data.agents.forEach(a => { if (a && a.email) agents[String(a.email).toLowerCase()] = true; });
+          else addInvalid(filePath, 'ملف summary غير صالح: agents ليست قائمة');
+        } else if (data && Array.isArray(data.rows) && Array.isArray(data.header)) {
+          result.drillRowCount += data.rows.length; result.rowCount += data.rows.length;
+          if (data.agent) agents[String(data.agent).toLowerCase()] = true;
+          if (data.metric) metrics[String(data.metric).toLowerCase()] = true;
+          if (data.rows.some(r => !Array.isArray(r) || r.length !== data.header.length)) addInvalid(filePath, 'عدد أعمدة صف لا يطابق header');
+        } else if (data && typeof data === 'object' && (data.schemaVersion || data.summary || data.agents)) {
+          // recognized summary/index object
+        } else addInvalid(filePath, 'بنية JSON غير معروفة');
+      }
+      const folders = folder.getFolders();
+      while (folders.hasNext()) { const child = folders.next(), childName = child.getName(); if (/^\d{4}-\d{2}$/.test(childName)) months[childName] = true; walk(child, path + '/' + childName); }
+    };
+    walk(root, root.getName());
+    result.months = Object.keys(months).sort(); result.agents = Object.keys(agents).sort(); result.metrics = Object.keys(metrics).sort();
+    result.sizeLabel = result.sizeBytes < 1024 ? result.sizeBytes + ' B' : result.sizeBytes < 1048576 ? (result.sizeBytes / 1024).toFixed(1) + ' KB' : (result.sizeBytes / 1048576).toFixed(2) + ' MB';
+    return result;
+  } catch (e) { return { success: false, code: errorCode_(e), message: safeError_(e) }; }
+}
+
+function repairDriveData() {
+  try {
+    if (!isCurrentUserPrimaryAdmin()) return { success: false, code: ERR.PRIMARY_ADMIN_REQUIRED, message: 'متاح للأدمن الأساسي فقط.' };
+    const audit = getDriveDataAudit();
+    if (!audit.success) return audit;
+    if (audit.invalidCount > audit.invalidFiles.length) return { success: false, message: 'عدد الملفات التالفة يتجاوز حد التقرير. أعد استيراد الملفات التالفة قبل الإصلاح.' };
+    const repaired = [], failed = [];
+    const affected = new Set();
+    audit.invalidFiles.forEach(function (issue) {
+      const relative = issue.path.slice(audit.rootName.length + 1);
+      const match = relative.match(/^(\d{4}-\d{2})\/summary\.json$/);
+      if (match) affected.add(match[1]);
+    });
+    affected.forEach(function (month) {
+      const sourceProblems = audit.invalidFiles.filter(issue => issue.path.indexOf(audit.rootName + '/' + month + '/drills/') === 0);
+      if (sourceProblems.length) {
+        failed.push({ month: month, message: 'ملفات drills تالفة؛ يلزم استعادتها من نسخة موثوقة أو إعادة استيرادها.' });
+        return;
+      }
+      const r = rebuildMonthSummaryFromDrills(month);
+      if (r && r.success) repaired.push(month); else failed.push({ month: month, message: (r && r.message) || 'تعذر الإصلاح' });
+    });
+    const after = getDriveDataAudit();
+    return { success: after.success && after.healthy && failed.length === 0,
+      repairedMonths: repaired, failedMonths: failed, audit: after,
+      remainingFiles: after.invalidFiles || [],
+      message: after.success && after.healthy ? 'اكتمل الفحص والبيانات سليمة.' :
+        'بقيت مشاكل تحتاج استعادة من نسخة موثوقة أو إعادة استيراد. لم يتم اعتبار البيانات سليمة.' };
+  } catch (e) { return { success: false, code: errorCode_(e), message: safeError_(e) }; }
+}
+
 function deleteAgentData(email) {
   try {
     if (!isCurrentUserPrimaryAdmin()) return { success: false, message: 'عذراً، حذف الوكيل نهائياً متاح فقط للأدمن الأساسي.' };
@@ -4096,7 +4175,23 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
     for (const a of agents) {
       const days = [];
       for (const periodMonth of monthsToRead) {
-        const tl = getAgentDailyTimeline(a.email, false, null, null, periodMonth, indexes[periodMonth], metricFilter);
+        // Share per-agent source days between Weekly and Monthly and languages.
+        // The existing import/rebuild version invalidates these entries as well.
+        const daysCacheKey = 'PERIOD_DAYS_v1_' + getAgentsChartCacheVersion() + '_' + periodMonth + '_' + (metricFilter || 'all') + '_' + String(a.email).toLowerCase();
+        let tl = null;
+        try {
+          const raw = CacheService.getScriptCache().get(daysCacheKey);
+          if (raw) tl = JSON.parse(raw);
+        } catch (e) { /* Cache is optional. */ }
+        if (!tl || !tl.success || !Array.isArray(tl.days)) {
+          tl = getAgentDailyTimeline(a.email, false, null, null, periodMonth, indexes[periodMonth], metricFilter);
+          if (tl && tl.success && Array.isArray(tl.days)) {
+            try {
+              const serialized = JSON.stringify(tl);
+              if (serialized.length < 30000) CacheService.getScriptCache().put(daysCacheKey, serialized, 1800);
+            } catch (e) { /* Fall back to Drive when cache is unavailable. */ }
+          }
+        }
         if (!tl || tl.success === false) {
           return { success: false, agents: [], periods: [], code: tl && tl.code,
             message: (tl && (tl.message || tl.error)) || 'تعذر تحميل بيانات الوكيل.' };

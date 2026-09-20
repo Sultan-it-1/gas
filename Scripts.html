@@ -1161,7 +1161,7 @@
     function fmtHours(value) {
         if (value === null || value === undefined || value === '' || !isFinite(Number(value))) return '—';
         if (AppState.timeMode === 'time') return formatDuration(Number(value) * 60, 'time');
-        return Number(value).toFixed(1);
+        return Number(value).toFixed(2);
     }
 
     function parseMinutesFromString(str) {
@@ -1400,7 +1400,8 @@
             return;
         }
 
-        let html = '<thead><tr><th class="period-agent-col">' + I18N.t('periodAgentCol') + ' (' + agents.length + ')</th>';
+        tableEl.style.width = (180 + periods.length * 110) + 'px';
+        let html = '<colgroup><col style="width:180px">' + periods.map(() => '<col style="width:110px">').join('') + '</colgroup><thead><tr><th class="period-agent-col">' + I18N.t('periodAgentCol') + ' (' + agents.length + ')</th>';
         periods.forEach(p => {
             html += '<th>' + escPeriod(p.label) + (p.range ? '<small>(' + escPeriod(p.range) + ')</small>' : '') + '</th>';
         });
@@ -2441,6 +2442,48 @@
         const btnOpenSheet = el('adminBtnOpenSheet');
         const statusBox = el('adminStatusBox');
 
+        const auditBtn = el('btnAuditDrive');
+        const repairBtn = el('btnRepairDrive');
+        const auditOut = el('driveAuditResult');
+        if (auditBtn && !auditBtn.dataset.bound) {
+            auditBtn.dataset.bound = '1';
+            auditBtn.addEventListener('click', () => {
+                auditBtn.disabled = true; auditBtn.style.opacity = '0.6';
+                if (auditOut) { auditOut.style.display = 'block'; auditOut.textContent = '⏳ جاري فحص مجلد Drive...'; }
+                const render = (r) => {
+                    auditBtn.disabled = false; auditBtn.style.opacity = '1';
+                    if (!auditOut) return;
+                    if (!r || !r.success) { auditOut.textContent = '❌ فشل الفحص: ' + ((r && r.message) || 'تعذر الوصول'); return; }
+                    if (repairBtn) repairBtn.style.display = r.healthy ? 'none' : 'inline-block';
+                    const state = r.healthy ? '✅ البيانات سليمة' : '⚠️ توجد ملفات غير سليمة (' + r.invalidCount + ')';
+                    auditOut.textContent = state + '\n' +
+                        'الحجم: ' + (r.sizeLabel || r.sizeBytes + ' B') + '\n' +
+                        'الملفات: ' + r.fileCount + ' | المجلدات: ' + r.folderCount + ' | JSON: ' + r.jsonFileCount + '\n' +
+                        'صفوف البيانات: ' + r.rowCount + ' | الملخصات: ' + r.summaryFileCount + '\n' +
+                        'الأشهر: ' + (r.months || []).join(', ') + '\n' +
+                        (r.invalidFiles && r.invalidFiles.length ? r.invalidFiles.map(x => '• ' + x.path + ': ' + x.reason).join('\n') : 'لا توجد أخطاء بنيوية.');
+                };
+                if (typeof google !== 'undefined' && google.script && google.script.run) google.script.run.withSuccessHandler(render).withFailureHandler(e => render({ success:false, message:e.message })).getDriveDataAudit();
+                else render({ success:false, message:'وضع المعاينة المحلي لا يدعم فحص Drive' });
+            });
+        }
+        if (repairBtn && !repairBtn.dataset.bound) {
+            repairBtn.dataset.bound = '1';
+            repairBtn.addEventListener('click', () => {
+                if (!window.confirm('سيتم إصلاح الملخصات المتضررة فقط عند سلامة ملفاتها الأصلية، ثم إعادة الفحص. هل تريد المتابعة؟')) return;
+                repairBtn.disabled = true; repairBtn.textContent = '⏳ جاري الإصلاح...';
+                const done = (r) => {
+                    repairBtn.disabled = false; repairBtn.textContent = '🛠️ إصلاح البيانات';
+                    if (auditBtn) auditBtn.click();
+                    alert(((r && r.message) || 'تعذر الإصلاح') + '\n' +
+                        'الأشهر التي أعيد بناؤها: ' + ((r && r.repairedMonths || []).join(', ') || 'لا يوجد') + '\n' +
+                        (r && r.failedMonths || []).map(x => x.month + ': ' + x.message).join('\n') + '\n' +
+                        (r && r.remainingFiles || []).map(x => x.path + ': ' + x.reason).join('\n'));
+                };
+                if (typeof google !== 'undefined' && google.script && google.script.run) google.script.run.withSuccessHandler(done).withFailureHandler(e => done({ success:false, message:e.message })).repairDriveData();
+            });
+        }
+
         if (!overlay) return;
 
         let parsedPayload = null;
@@ -3186,6 +3229,14 @@
 
     // آخر يوم مسجّل للوكيل: يعيد { day, sessions } أو null (من الخط الزمني المحمّل لنفس الوكيل)
     function agentLastDaySessions_(email) {
+        const key = JSON.stringify([String(email || '').toLowerCase(), AppState.selectedMonth || '']);
+        const entry = agentSessionDays_.get(key);
+        if (entry && entry.days) {
+            const days = entry.days.filter(d => d && d.day && Number(d.sessions) > 0)
+                .sort((a, b) => String(a.day).localeCompare(String(b.day)));
+            const last = days[days.length - 1];
+            return last ? { day: last.day, sessions: Number(last.sessions) } : null;
+        }
         const active = (typeof currentAnalyticsEmail === 'function') ? currentAnalyticsEmail() : '';
         if (!active || String(active).toLowerCase() !== String(email || '').toLowerCase()) return null;
         const days = Array.isArray(AppState.chartDays) ? AppState.chartDays : [];
@@ -3195,6 +3246,32 @@
         const last = withDay[withDay.length - 1];
         const n = Number(last.sessions);
         return { day: last.day, sessions: isFinite(n) ? n : 0 };
+    }
+
+    // Agent summary loads independently of the Analytics tab and its selection.
+    const agentSessionDays_ = new Map();
+    function loadAgentSessionDays_(email) {
+        const month = AppState.selectedMonth || '';
+        const key = JSON.stringify([String(email || '').toLowerCase(), month]);
+        const old = agentSessionDays_.get(key);
+        if (old && (old.loading || Date.now() - old.at < DashboardReads.ttl)) return;
+        const entry = { loading: true, at: Date.now(), days: null };
+        agentSessionDays_.set(key, entry);
+        const done = (res) => {
+            entry.loading = false;
+            entry.at = Date.now();
+            entry.days = res && res.success && Array.isArray(res.days) ? res.days : [];
+            if (String(AppState.selectedAgent || '').toLowerCase() === String(email).toLowerCase() &&
+                (AppState.selectedMonth || '') === month) refreshAgentSummaryBar_();
+        };
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            dashboardReadRunner_().withSuccessHandler(done).withFailureHandler(() => done(null))
+                .getAgentDailyTimeline(email, false, null, null, month);
+        } else {
+            const days = typeof window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__ === 'function'
+                ? window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__(email, month) : computeAgentDaysLocally(email, false);
+            Promise.resolve().then(() => done({ success: true, days: Array.isArray(days) ? days : (days && days.days) || [] }));
+        }
     }
 
     // إجمالي الجلسات الطويلة (≥ 20 دقيقة) للوكيل
@@ -3236,6 +3313,7 @@
     function renderMetricSummaryBarSingleAgent(agent, metric) {
         const bar = el('metricSummary');
         if (!bar) return;
+        loadAgentSessionDays_(agent.email);
 
         const latenessLabel = I18N.currentLang === 'ar' ? 'تأخير:' : 'Lateness:';
         const breachLabel = I18N.currentLang === 'ar' ? 'تجاوز بريك:' : 'Break Exceed:';
@@ -3832,7 +3910,10 @@
 
         const overlay = document.createElement('div');
         overlay.id = 'agbtDetailsOverlay';
-        overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; background:rgba(7,12,22,0.72); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:20px;';
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:10060; background:rgba(7,12,22,0.72); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:20px;';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', I18N.currentLang === 'ar' ? 'تفاصيل التكت' : 'Ticket details');
         overlay.innerHTML = '<div style="background:#0d1527; border:1px solid var(--border); border-radius:16px; max-width:560px; width:100%; max-height:80vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 60px rgba(0,0,0,0.6);">'
             + '<div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);">'
             + '<h3 style="margin:0; font-size:16px; color:#fff;">' + (I18N.currentLang === 'ar' ? 'تفاصيل التكت' : 'Ticket details') + ' <span style="color:var(--muted); font-weight:400; font-size:13px;" dir="ltr">#' + escPeriod(ticketId) + '</span></h3>'
@@ -3841,6 +3922,11 @@
             + '<div id="agbtDetailsBody" style="padding:16px 20px; overflow:auto; color:var(--text-sub); font-size:13px; text-align:center;">⏳ ' + (I18N.currentLang === 'ar' ? 'جاري البحث في جلسات جميع الوكلاء…' : 'Searching all agents sessions…') + '</div>'
             + '</div>';
         document.body.appendChild(overlay);
+
+        overlay.querySelector('#agbtDetailsClose').focus();
+        overlay.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { e.stopPropagation(); overlay.remove(); }
+        });
 
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         overlay.querySelector('#agbtDetailsClose').addEventListener('click', () => overlay.remove());
@@ -3940,6 +4026,7 @@
             + '    </div>'
             + '  </div>'
             + '  <div id="chartDrilldownBody" class="chart-drilldown-body">'
+            + '    <div id="chartDrilldownDate" class="chart-drilldown-date" dir="auto"></div>'
             + '    <div id="chartDrilldownMetricsGrid" class="chart-drill-metrics-grid"></div>'
             + '    <div class="chart-drill-tickets-section">'
             + '      <div class="chart-drill-tickets-header">'
@@ -4052,7 +4139,7 @@
             <div class="chart-drill-kpi-card kpi-abst">
                 <div class="chart-drill-kpi-head">
                     <span class="chart-drill-kpi-icon">⏱️</span>
-                    <span class="chart-drill-kpi-label">${isAr ? 'وقت الجلسة (ABST)' : 'Avg Session Time'}</span>
+                    <span class="chart-drill-kpi-label">ABST</span>
                 </div>
                 <div class="chart-drill-kpi-val val-blue">${abstStr}</div>
                 <div class="chart-drill-kpi-sub">
@@ -4063,7 +4150,7 @@
             <div class="chart-drill-kpi-card kpi-agbt">
                 <div class="chart-drill-kpi-head">
                     <span class="chart-drill-kpi-icon">🛒</span>
-                    <span class="chart-drill-kpi-label">${isAr ? 'سلة التذاكر (AGBT)' : 'General Basket Time'}</span>
+                    <span class="chart-drill-kpi-label">AGBT</span>
                 </div>
                 <div class="chart-drill-kpi-val val-purple">${agbtStr}</div>
                 <div class="chart-drill-kpi-sub">
@@ -4297,7 +4384,11 @@
         if (!bucket || !email) return;
 
         const dateStr = bucket.day;
-        const displayDay = bucket.displayDay || dateStr;
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? new Date(dateStr + 'T12:00:00Z') : null;
+        const displayDay = date && !isNaN(date.getTime())
+            ? date.toLocaleDateString(I18N.currentLang === 'ar' ? 'ar-SA-u-ca-gregory' : 'en-GB', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'
+            }) : dateStr;
         const initialMetric = AppState.currentChartTab || 'csat';
         AppState.drilldownDate = dateStr;
         AppState.drilldownAgent = email;
@@ -4313,8 +4404,10 @@
         const isAr = I18N.currentLang === 'ar';
         const titleEl = document.getElementById('chartDrilldownTitle');
         if (titleEl) {
-            titleEl.textContent = (isAr ? 'تفاصيل اليوم الكاملة · ' : 'Full Day Performance · ') + displayDay;
+            titleEl.textContent = isAr ? 'تفاصيل اليوم الكاملة' : 'Full Day Performance';
         }
+        const dateEl = document.getElementById('chartDrilldownDate');
+        if (dateEl) dateEl.textContent = '📅 ' + displayDay;
         const subtitleEl = document.getElementById('chartDrilldownSubtitle');
         if (subtitleEl) {
             subtitleEl.textContent = (isAr ? 'الوكيل: ' : 'Agent: ') + email + ' (' + dateStr + ')';
@@ -5068,7 +5161,7 @@
                 el('teamStatBreach').title = breachExceedText(totalBreachMins);
             }
             if (el('teamStatLateness')) el('teamStatLateness').textContent = fmtMinutes(totalLate);
-            if (el('teamStatIdle')) el('teamStatIdle').textContent = idleCount > 0 ? formatDuration(idleAvgHours * 60) : fmtHours(0);
+            if (el('teamStatIdle')) el('teamStatIdle').textContent = fmtHours(idleCount > 0 ? idleAvgHours : 0);
         }
 
         // 3 & 4. الشريط الثانوي ورسم المخطط البياني التفاعلي
@@ -5759,7 +5852,8 @@
                     AppState.agentChartLoading = false;
                     AppState.agentChartPendingKey = '';
                     AppState.agentChartLoadedAt = Date.now();
-                    AppState.agentChartData = (res && res.success && Array.isArray(res.agents)) ? res : { success: true, metric: metric, agents: [] };
+                    AppState.agentChartData = (res && res.success && Array.isArray(res.agents)) ? res : null;
+                    if (!AppState.agentChartData) AppState.agentChartError = (res && res.message) || (I18N.currentLang === 'ar' ? 'تعذر تحميل البيانات. أعد المحاولة.' : 'Unable to load data. Please retry.');
                     AppState.agentChartKey = key;
                     renderAgentBarChart();
                 })
@@ -5870,9 +5964,24 @@
 
         // نفس أبعاد/هوامش مخطط By Day (ثبات التخطيط عند التبديل)
         const count = agents.length;
-        const width = 820;
-        const height = 240;
-        const padX = 55, padTop = 32, padBottom = 32;
+        const nameLines = agents.map(a => {
+            const name = String(a.name || a.email || '').trim();
+            const words = name.split(/\s+/);
+            const lines = [''];
+            words.forEach(word => {
+                const chunks = word.match(/.{1,18}/gu) || [''];
+                chunks.forEach(chunk => {
+                    const last = lines.length - 1;
+                    if (lines[last] && (lines[last] + ' ' + chunk).length > 18) lines.push(chunk);
+                    else lines[last] += (lines[last] ? ' ' : '') + chunk;
+                });
+            });
+            return lines;
+        });
+        const width = Math.max(820, count * 150 + 110);
+        const padBottom = 24 + Math.max(...nameLines.map(lines => lines.length)) * 18;
+        const height = 240 + padBottom;
+        const padX = 55, padTop = 32;
         const chartW = width - padX * 2;
         const chartH = height - padTop - padBottom;
 
@@ -5881,7 +5990,7 @@
         const metricIsIdle = (metric === 'idle');
         const metricIsPercent = (metric === 'csat');
         const isDecimalMode = (AppState.timeMode || 'decimal') === 'decimal';
-        const metricDisplayDivisor = (metricIsDuration && isDecimalMode) ? 60 : 1;
+        const metricDisplayDivisor = 1; // Duration values are minutes, matching tables.
         const agentValues = agents.map(a => Number(a.value)).filter(v => isFinite(v));
         const agentDataMin = agentValues.length ? Math.min.apply(null, agentValues) : 0;
         const agentDataMax = agentValues.length ? Math.max.apply(null, agentValues) : 0;
@@ -5909,7 +6018,7 @@
             if (metricIsIdle) return isDecimalMode ? v.toFixed(chartDecimals) : formatDuration(v * 60);
             if (metricIsDuration) {
                 if (!isDecimalMode) return formatDuration(v);
-                return (v / 60).toFixed(chartDecimals);
+                return formatDuration(v);
             }
             return formatAgentMetricValue(metric, v);
         };
@@ -5938,17 +6047,14 @@
             const y = padTop + chartH - h;
             const label = fmt(val);
             const name = String(a.name || a.email || '');
-            const shortName = name.length > 14 ? name.slice(0, 13) + '…' : name;
             const cx = x + barW / 2;
-            const nameY = height - 10;
+            const nameY = padTop + chartH + 22;
             // للبريك: الأساسي الدقائق، ونضيف عدد المرات في التلميح
             const barsBreach = (metric === 'breakBreach') ? parseInt(a.breaches, 10) || 0 : null;
             const titleText = (metric === 'breakBreach')
                 ? name + '\n' + meta.legend + ': ' + label + '\n' + breachCountText(barsBreach)
                 : name + '\n' + meta.legend + ': ' + label;
-            const nameEl = (count > 9)
-                ? `<text x="${cx}" y="${nameY}" fill="var(--muted)" font-size="9.5" text-anchor="end" transform="rotate(-35 ${cx} ${nameY})">${escapeHtml(shortName)}</text>`
-                : `<text x="${cx}" y="${nameY}" fill="var(--muted)" font-size="10" text-anchor="middle">${escapeHtml(shortName)}</text>`;
+            const nameEl = `<text x="${cx}" y="${nameY}" fill="var(--text)" font-size="12" font-weight="600" text-anchor="middle" style="unicode-bidi:plaintext;">${nameLines[i].map((line, j) => `<tspan x="${cx}" dy="${j ? 18 : 0}">${escapeHtml(line)}</tspan>`).join('')}</text>`;
             bars += `<g class="chart-bar-group" tabindex="0">
                 <title>${escapeHtml(titleText)}</title>
                 <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${meta.color}" opacity="0.9"></rect>
@@ -5957,7 +6063,8 @@
             </g>`;
         });
 
-        wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; height:auto; overflow:visible;" preserveAspectRatio="xMidYMid meet">
+        wrap.style.overflowX = 'auto';
+        wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="analytics-svg-chart" style="width:100%; min-width:${width}px; height:auto; overflow:visible;" preserveAspectRatio="xMidYMid meet">
             ${grid}
             <line x1="${padX}" y1="${padTop + chartH}" x2="${width - padX}" y2="${padTop + chartH}" stroke="var(--border)" stroke-width="1.5"></line>
             ${bars}
@@ -6173,8 +6280,8 @@
         const count = values.length;
         const isDurationChart = (chartType === 'abst' || chartType === 'agbt');
         const isDecimalDuration = isDurationChart && (AppState.timeMode || 'decimal') === 'decimal';
-        // في الوضع العشري تُعرض المدة بالساعات
-        const scaleDivisor = isDecimalDuration ? 60 : 1;
+        // Decimal durations use minutes, exactly like the tables.
+        const scaleDivisor = 1;
 
         const finiteVals = values.filter(v => isFinite(Number(v))).map(Number);
         const dataMin = finiteVals.length ? Math.min.apply(null, finiteVals) : 0;
@@ -6206,7 +6313,7 @@
             benchmarkText = `${avgVal.toFixed(1)}%`;
         } else if (isDurationChart) {
             benchmarkText = isDecimalDuration
-                ? (avgVal / 60).toFixed(durationDecimals)
+                ? formatDuration(avgVal)
                 : formatDuration(avgVal);
         }
         if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = benchmarkText;
@@ -6227,7 +6334,7 @@
         function formatDisplayVal(val) {
             if (chartType === 'csat') return `${Math.round(val)}%`;
             if (isDurationChart) {
-                if (isDecimalDuration) return (val / 60).toFixed(durationDecimals);
+                if (isDecimalDuration) return formatDuration(val);
                 return formatDuration(val);
             }
             return `${val}`;
@@ -6646,7 +6753,7 @@
                     }
                 });
             });
-            const idleAvg = idleCount > 0 ? parseFloat((idleHoursSum / idleCount).toFixed(1)) : 0.0;
+            const idleAvg = idleCount > 0 ? idleHoursSum / idleCount : 0;
 
             // Productivity (null في حال عدم توفر صفوف لتظهر كشرطة)
             let prodVal = null;
@@ -6710,6 +6817,71 @@
             historicalDays: historicalDays
         };
     }
+
+    // Presentation only: original cells and sort handlers remain available in Full.
+    function setupSimpleMetricTables_() {
+        if (typeof MutationObserver === 'undefined' || !document.body) return;
+        const modes = new Map();
+        const labels = {
+            ticket_id: ['التكت', 'Ticket'], session_id: ['الجلسة', 'Session'],
+            csat_adjusted: ['التقييم', 'Rating'], resolver: ['الوكيل', 'Agent'],
+            channel: ['القناة', 'Channel'], topic: ['الموضوع', 'Topic'],
+            ticket_country: ['الدولة', 'Country'], date_resolved_dubai: ['تاريخ الإغلاق', 'Resolved at'],
+            csat_submitted_at_dubai: ['تاريخ التقييم', 'Rated at'],
+            basket_session_time_min: ['ABST (دقيقة)', 'ABST (min)'],
+            time_not_working_h: ['Idle (ساعة)', 'Idle (hours)'],
+            time_not_working_h_shift_adjusted: ['Idle (ساعة)', 'Idle (hours)'],
+            sum_basket_time_for_ticket_per_hour_min_online_womt: ['AGBT (دقيقة)', 'AGBT (min)']
+        };
+        const hidden = /^(customer_id|resolver_team_lead_id|resolver_team_lead_email|responsible_group|amount_of_comments|status_before_closure|week)$/i;
+        let scheduled = false;
+        function apply() {
+            scheduled = false;
+            document.querySelectorAll('#dataTable, .period-table, .chart-drilldown-table').forEach(table => {
+                const headers = Array.from(table.querySelectorAll('thead th'));
+                if (!headers.length) return;
+                const host = table.parentElement;
+                let toolbar = host.querySelector(':scope > .metric-table-view');
+                const key = table.id || host.id || 'drill';
+                if (!toolbar) {
+                    toolbar = document.createElement('div'); toolbar.className = 'metric-table-view';
+                    ['simple', 'full'].forEach(mode => {
+                        const button = document.createElement('button'); button.type = 'button';
+                        button.textContent = mode === 'simple' ? 'Simple' : 'Full'; button.dataset.mode = mode;
+                        button.addEventListener('click', () => { modes.set(key, mode); apply(); });
+                        toolbar.appendChild(button);
+                    });
+                    host.insertBefore(toolbar, table);
+                }
+                const simple = (modes.get(key) || 'simple') === 'simple';
+                toolbar.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'simple') === simple)));
+                table.classList.toggle('metric-table-simple', simple);
+                headers.forEach((th, index) => {
+                    const label = th.querySelector('span > span:not(.sort-icon)') || th;
+                    if (!th.dataset.originalLabel) th.dataset.originalLabel = label.textContent;
+                    const original = th.dataset.originalLabel;
+                    const normalized = original.trim().toLowerCase();
+                    const omit = simple && hidden.test(normalized);
+                    th.hidden = omit;
+                    const translated = labels[normalized];
+                    const display = simple ? (translated ? translated[I18N.currentLang === 'ar' ? 0 : 1] : original.replace(/_/g, ' ')) : original;
+                    if (label.textContent !== display) label.textContent = display;
+                    Array.from(table.tBodies).forEach(body => Array.from(body.rows).forEach(row => {
+                        if (row.cells.length !== headers.length) return;
+                        const cell = row.cells[index]; cell.hidden = omit;
+                        if (simple && !cell.title) cell.title = cell.textContent.trim();
+                    }));
+                });
+            });
+        }
+        const observer = new MutationObserver(() => {
+            if (!scheduled) { scheduled = true; requestAnimationFrame(apply); }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        apply();
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupSimpleMetricTables_, { once: true });
+    else setupSimpleMetricTables_();
 
     function message(text, isError = false) {
         const s = el('status');

@@ -4826,4 +4826,47 @@ tbody td { padding: 11px 12px; }
     border-radius: 6px;
 }
 .bo-ticket-link:hover { background: var(--accent); color: var(--on-action); }
+/* Keep wide Drive values inside their scroll container, including grid children. */
+.workspace > *, .panel, .period-table-wrap, .table-wrap,
+.chart-drilldown-scroll { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.table-wrap table, .chart-drilldown-table {
+    table-layout: fixed;
+    width: max-content;
+    min-width: 100%;
+}
+.table-wrap th, .table-wrap td,
+.chart-drilldown-table th, .chart-drilldown-table td {
+    width: 180px; min-width: 0; max-width: 180px;
+    padding: 7px 10px; font-size: 12px; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.period-table { table-layout: fixed; width: 840px; min-width: 0; }
+.period-table td.period-cell { display: table-cell; }
+.period-table th, .period-table td {
+    padding: 7px 10px; font-size: 12px; line-height: 1.4;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.period-table .agent-name-link {
+    display: block; max-width: 100%; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+}
+.chart-drilldown-date {
+    margin: 0 0 18px;
+    padding: 16px 20px;
+    border: 1px solid var(--accent);
+    border-inline-start: 5px solid var(--accent);
+    border-radius: 12px;
+    background: var(--accent-glow);
+    color: var(--text);
+    font-size: clamp(19px, 3vw, 26px);
+    font-weight: 800;
+    line-height: 1.5;
+    text-align: center;
+}
+.metric-table-view { display:flex; gap:4px; padding:10px 12px; position:sticky; inset-inline-start:0; background:var(--panel); }
+.metric-table-view button { padding:6px 16px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); cursor:pointer; font-size:12px; }
+.metric-table-view button[aria-pressed="true"] { background:var(--accent-glow); color:var(--accent); border-color:var(--accent); font-weight:700; }
+.metric-table-simple th { font-weight:700; letter-spacing:0; }
+.metric-table-simple td { padding:9px 12px; }
+.metric-table-simple [hidden] { display:none !important; }
 </style>
