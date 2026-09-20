@@ -187,6 +187,7 @@
                 filterToday: 'Today',
                 filterYesterday: 'Yesterday',
                 filterThisWeek: 'This Week',
+                filterThisMonth: 'This Month',
                 filterAllCsat: 'All (Satisfied & Unsatisfied)',
                 filterGoodCsat: 'Satisfied only',
                 filterBadCsat: 'Unsatisfied only',
@@ -208,8 +209,8 @@
                 avgSessionsLabel: 'Avg Daily Sessions:',
                 agentTotalSessionsLabel: 'Total Sessions:',
                 agentLastDaySessionsLabel: 'Sessions (Last Day: {date}):',
-                agentGoodCsatLabel: 'Good CSAT:',
-                agentBadCsatLabel: 'Bad CSAT:',
+                agentGoodCsatLabel: 'Good:',
+                agentBadCsatLabel: 'Bad:',
                 
                 // Analytics View
                 analyticsTitle: 'Live Performance Analytics & Charts',
@@ -546,6 +547,7 @@
                 filterToday: 'اليوم',
                 filterYesterday: 'أمس',
                 filterThisWeek: 'هذا الأسبوع',
+                filterThisMonth: 'هذا الشهر',
                 filterAllCsat: 'الكل (راضي وغير راضي)',
                 filterGoodCsat: 'راضي فقط',
                 filterBadCsat: 'غير راضي',
@@ -567,8 +569,8 @@
                 avgSessionsLabel: 'متوسط السيشن اليومي:',
                 agentTotalSessionsLabel: 'إجمالي السيشنات:',
                 agentLastDaySessionsLabel: 'سيشنات آخر يوم ({date}):',
-                agentGoodCsatLabel: 'Good CSAT (راضي):',
-                agentBadCsatLabel: 'Bad CSAT (غير راضي):',
+                agentGoodCsatLabel: 'Good (راضي):',
+                agentBadCsatLabel: 'Bad (غير راضي):',
                 
                 // Analytics View
                 analyticsTitle: 'إحصائيات الأداء والتحليلات البيانية',
@@ -877,7 +879,7 @@
         timeMode: 'decimal', // 'decimal' (افتراضي) أو 'time'
         selectedMonth: '',      // الشهر المختار حالياً بالصيغة YYYY-MM (أو '' للشهر الحالي)
         availableMonths: [],    // قائمة الشهور المتوفرة في درايف
-        chartDatePreset: 'all',
+        chartDatePreset: 'month',
         chartStartDate: '',
         chartEndDate: '',
         chartByShift: false,
@@ -932,7 +934,7 @@
         agentChartLoadedAt: 0,
         periodRequestIds: {},
         detailFilters: {
-            datePreset: 'all',
+            datePreset: 'month',
             csatScore: 'all',
             channel: 'all',
             topSessions: 'all',
@@ -1406,7 +1408,7 @@
             html += '<tr><td class="period-agent-col" dir="auto"><button type="button" class="agent-name-link" data-email="' + emailAttr + '" style="font-weight:600;">' + escPeriod(a.name || a.email) + '</button></td>';
             periods.forEach(p => {
                 const v = (a.values && a.values[p.key] !== undefined) ? a.values[p.key] : null;
-                html += periodCellHtml(v, metric);
+                html += periodCellHtml(v, metric, a.email, p);
             });
             html += '</tr>';
         });
@@ -1420,9 +1422,198 @@
                 if (em) selectAgent(em);
             });
         });
+
+        // النقر على أي خلية فترة يعرض البيانات التي كوّنتها
+        tableEl.querySelectorAll('.period-cell.clickable').forEach(cell => {
+            cell.addEventListener('click', () => {
+                openPeriodCellDrill(
+                    cell.getAttribute('data-email'),
+                    cell.getAttribute('data-start'),
+                    cell.getAttribute('data-end'),
+                    cell.getAttribute('data-label'),
+                    metric
+                );
+            });
+        });
     }
 
-    function periodCellHtml(v, metric) {
+    // مقياس ملف التفاصيل المقابل (sessions/long مشتقّان من abst)
+    function periodDrillSourceMetric_(metric) {
+        const m = String(metric || '').toLowerCase();
+        return (m === 'sessions' || m === 'long') ? 'abst' : m;
+    }
+
+    function ensurePeriodDrillModal() {
+        let overlay = document.getElementById('periodDrillOverlay');
+        if (overlay) { overlay.classList.add('open'); return overlay; }
+        overlay = document.createElement('div');
+        overlay.id = 'periodDrillOverlay';
+        overlay.className = 'chart-drilldown-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.innerHTML = ''
+            + '<div class="chart-drilldown-card">'
+            + '<div class="chart-drilldown-header"><h3 id="periodDrillTitle" class="chart-drilldown-title">' + escPeriod(I18N.t('drillTitle')) + '</h3>'
+            + '<button type="button" id="periodDrillClose" class="chart-drilldown-close" aria-label="Close">✕</button></div>'
+            + '<div id="periodDrillBody" class="chart-drilldown-body"></div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closePeriodDrill(); });
+        overlay.querySelector('#periodDrillClose').addEventListener('click', closePeriodDrill);
+        if (!ensurePeriodDrillModal._escBound) {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && document.getElementById('periodDrillOverlay')) closePeriodDrill();
+            });
+            ensurePeriodDrillModal._escBound = true;
+        }
+        return overlay;
+    }
+
+    function closePeriodDrill() {
+        const o = document.getElementById('periodDrillOverlay');
+        if (!o) return;
+        o.classList.remove('open');
+        setTimeout(() => { const x = document.getElementById('periodDrillOverlay'); if (x && !x.classList.contains('open')) x.remove(); }, 200);
+    }
+
+    function openPeriodCellDrill(email, start, end, label, metric) {
+        if (!email) return;
+        ensurePeriodDrillModal();
+        const titleEl = document.getElementById('periodDrillTitle');
+        const bodyEl = document.getElementById('periodDrillBody');
+        const ag = (AppState.agents || []).find(a => String(a.email || '').toLowerCase() === String(email).toLowerCase());
+        const metricLabel = I18N.t(chartTabLabelKey_(metric)) || (METRIC_LABELS[metric] || metric);
+        if (titleEl) titleEl.textContent = metricLabel + ' · ' + (ag ? (ag.name || ag.email) : email) + ' · ' + (label || ((start || '') + ' → ' + (end || '')));
+        if (bodyEl) bodyEl.innerHTML = '<div class="chart-drilldown-state">⏳ ' + escPeriod(I18N.t('drillLoading')) + '</div>';
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler((res) => renderPeriodDrill(res, metric))
+                .withFailureHandler(() => {
+                    const b = document.getElementById('periodDrillBody');
+                    if (b) b.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">❌ ' + escPeriod(I18N.t('drillError')) + '</div>';
+                })
+                .getAgentDrillPageFromSheet(email, periodDrillSourceMetric_(metric), {
+                    month: AppState.selectedMonth || '',
+                    rangeStart: start || '',
+                    rangeEnd: end || '',
+                    pageSize: 300
+                });
+        } else if (typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_PERIOD_SUMMARY__ === 'function') {
+            const summary = window.__LOCAL_PREVIEW_GET_PERIOD_SUMMARY__(start, end, email);
+            renderPeriodDrillDaily(summary.rows || [], metric);
+        } else if (bodyEl) {
+            bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">' + escPeriod(I18N.t('drillPublishedOnly')) + '</div>';
+        }
+    }
+
+    function renderPeriodDrill(res, metric) {
+        const bodyEl = document.getElementById('periodDrillBody');
+        if (!bodyEl) return;
+        if (!res || !res.success || !Array.isArray(res.rows) || !res.rows.length) {
+            bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">📭 ' + escPeriod(I18N.t('drillEmpty')) + '</div>';
+            return;
+        }
+        const header = res.header || [];
+        const rows = res.rows || [];
+        // صفوف مُسقطة (المعاينة المحلية) — عناصر كائنات وليست مصفوفات
+        if (rows.length && !Array.isArray(rows[0])) return renderPeriodDrillProjected(rows, metric);
+        const tIdx = findHeaderCol(header, 'ticket_id', 'ticket id', 'session_id', 'session id', 'ticket_number', 'ticket number', 'ticket');
+        const dIdx = findHeaderCol(header, 'day', 'report_dt', 'ticket_creation_date', 'date_resolved_dubai', 'created_at_dubai', 'csat_submitted_at_dubai', 'date');
+        const chanIdx = findHeaderCol(header, 'ticket_channel', 'channel');
+        const scoreIdx = findHeaderCol(header, 'csat_adjusted', 'csat', 'score');
+        const mm = periodDrillSourceMetric_(metric);
+        let durIdx = -1;
+        if (mm === 'abst') durIdx = findHeaderCol(header, 'basket_session_time_min', 'session_time_min', 'basket_session_time', 'abst', 'time');
+        else if (mm === 'agbt') durIdx = findHeaderCol(header, 'sum_basket_time_for_ticket_per_hour_min_ONLINE_WOMT', 'sum_basket_time_for_ticket_per_hour_min', 'basket_time', 'agbt');
+
+        let html = '<div class="chart-drilldown-scroll"><table class="chart-drilldown-table"><thead><tr>';
+        html += '<th>#</th><th>' + escPeriod(I18N.t('drillColTicket')) + '</th><th>' + escPeriod(I18N.t('drillColDateTime')) + '</th>';
+        if (durIdx !== -1) html += '<th>' + escPeriod(I18N.t('drillColDuration')) + '</th>';
+        if (scoreIdx !== -1) html += '<th>' + escPeriod(I18N.t('drillColScore')) + '</th>';
+        if (chanIdx !== -1) html += '<th>' + escPeriod(I18N.t('drillColChannel')) + '</th>';
+        html += '</tr></thead><tbody>';
+        rows.forEach((r, i) => {
+            const ticket = tIdx !== -1 ? String(r[tIdx] || '').trim() : '';
+            const ticketCell = ticket
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
+                : '—';
+            html += '<tr>';
+            html += '<td class="drill-idx">' + (i + 1) + '</td>';
+            html += '<td>' + ticketCell + '</td>';
+            html += '<td dir="ltr">' + escPeriod(dIdx !== -1 ? String(r[dIdx] || '') : '') + '</td>';
+            if (durIdx !== -1) html += '<td dir="ltr" class="drill-duration">' + escPeriod(String(r[durIdx] || '—').trim() || '—') + '</td>';
+            if (scoreIdx !== -1) html += '<td>' + escPeriod(String(r[scoreIdx] || '—')) + '</td>';
+            if (chanIdx !== -1) html += '<td>' + formatChannelBadge(String(r[chanIdx] || '')) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        bodyEl.innerHTML = html;
+        bodyEl.querySelectorAll('.chart-drilldown-ticket').forEach(btn => {
+            btn.addEventListener('click', () => openAgbtDetails(btn.getAttribute('data-ticket-id'), 0));
+        });
+    }
+
+    // عرض صفوف مُسقطة (المعاينة المحلية): { ticket, datetime, durationMins, channel, score }
+    function renderPeriodDrillProjected(rows, metric) {
+        const bodyEl = document.getElementById('periodDrillBody');
+        if (!bodyEl) return;
+        if (!rows || !rows.length) {
+            bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">📭 ' + escPeriod(I18N.t('drillEmpty')) + '</div>';
+            return;
+        }
+        const isCsat = metric === 'csat';
+        const showDuration = (metric === 'abst' || metric === 'agbt' || metric === 'long' || metric === 'sessions');
+        let html = '<div class="chart-drilldown-scroll"><table class="chart-drilldown-table"><thead><tr>';
+        html += '<th>#</th><th>' + escPeriod(I18N.t('drillColTicket')) + '</th><th>' + escPeriod(I18N.t('drillColDateTime')) + '</th>';
+        if (showDuration) html += '<th>' + escPeriod(I18N.t('drillColDuration')) + '</th>';
+        if (isCsat) html += '<th>' + escPeriod(I18N.t('drillColScore')) + '</th>';
+        html += '<th>' + escPeriod(I18N.t('drillColChannel')) + '</th></tr></thead><tbody>';
+        rows.forEach((r, i) => {
+            const ticket = String(r.ticket || '').trim();
+            const ticketCell = ticket
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
+                : '—';
+            html += '<tr><td class="drill-idx">' + (i + 1) + '</td><td>' + ticketCell + '</td>';
+            html += '<td dir="ltr">' + escPeriod(r.datetime || '') + '</td>';
+            if (showDuration) {
+                const dm = (r.durationMins === null || r.durationMins === undefined || isNaN(Number(r.durationMins)))
+                    ? '—' : escPeriod(formatDuration(Number(r.durationMins)));
+                html += '<td dir="ltr" class="drill-duration">' + dm + '</td>';
+            }
+            if (isCsat) html += '<td>' + escPeriod(r.score || '—') + '</td>';
+            html += '<td>' + formatChannelBadge(r.channel) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        bodyEl.innerHTML = html;
+        bodyEl.querySelectorAll('.chart-drilldown-ticket').forEach(btn => {
+            btn.addEventListener('click', () => openAgbtDetails(btn.getAttribute('data-ticket-id'), 0));
+        });
+    }
+
+    // عرض ملخّص الأيام (المعاينة المحلية) — نفس الأرقام التي كوّنت خلية الجدول بالضبط
+    function renderPeriodDrillDaily(rows, metric) {
+        const bodyEl = document.getElementById('periodDrillBody');
+        if (!bodyEl) return;
+        if (!rows || !rows.length) {
+            bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">📭 ' + escPeriod(I18N.t('drillEmpty')) + '</div>';
+            return;
+        }
+        let html = '<div class="chart-drilldown-scroll"><table class="chart-drilldown-table"><thead><tr>';
+        html += '<th>#</th><th>Date</th><th>Sessions</th><th>ABST</th><th>AGBT</th><th>CSAT</th><th>20m+</th></tr></thead><tbody>';
+        rows.forEach((d, i) => {
+            html += '<tr><td class="drill-idx">' + (i + 1) + '</td>'
+                + '<td dir="ltr">' + escPeriod(d.day || '') + '</td>'
+                + '<td>' + (Number(d.sessions) || 0) + '</td>'
+                + '<td dir="ltr" class="drill-duration">' + escPeriod(formatDuration(Number(d.abstMins) || 0)) + '</td>'
+                + '<td dir="ltr" class="drill-duration">' + escPeriod(formatDuration(Number(d.agbtMins) || 0)) + '</td>'
+                + '<td>' + (Number(d.csat) || 0) + '%</td>'
+                + '<td>' + (Number(d.long) || 0) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+        bodyEl.innerHTML = html;
+    }
+
+    function periodCellHtml(v, metric, email, period) {
         const mAttr = ' data-metric="' + escPeriod(metric) + '"';
         if (v === null || v === undefined) {
             return '<td' + mAttr + '><span class="period-cell empty">—</span></td>';
@@ -1439,7 +1630,17 @@
         } else {
             text = String(v);
         }
-        return '<td' + mAttr + '><span class="period-cell ' + cls + '" title="' + text + '">' + text + '</span></td>';
+        // إزالة الفراغات الزائدة حتى لا تكبر الخلية بلا داعٍ
+        text = String(text).trim().replace(/\s+/g, ' ');
+        const safe = (typeof escapeHtml === 'function') ? escapeHtml(text) : text;
+        const start = (period && period.start) ? escPeriod(period.start) : '';
+        const end = (period && period.end) ? escPeriod(period.end) : '';
+        const label = (period && period.label) ? escPeriod(period.label) : '';
+        const canClick = Boolean(email && (start || end));
+        const spanOpen = canClick
+            ? '<span class="period-cell ' + cls + ' clickable" data-email="' + escPeriod(email) + '" data-start="' + start + '" data-end="' + end + '" data-label="' + label + '" style="cursor:pointer;"'
+            : '<span class="period-cell ' + cls + '"';
+        return '<td' + mAttr + '>' + spanOpen + ' title="' + safe + '">' + safe + '</span></td>';
     }
 
     function activeChartMetricKey_() {
@@ -1929,9 +2130,9 @@
             listEl.innerHTML = '';
             agents.forEach(u => {
                 const row = document.createElement('div');
-                row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(15,23,42,0.5);border:1px solid ' + (u.banned ? 'rgba(245,158,11,0.5)' : 'var(--border)') + ';border-radius:8px;';
+                row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel-sub);border:1px solid ' + (u.banned ? 'rgba(245,158,11,0.5)' : 'var(--border)') + ';border-radius:8px;';
                 row.innerHTML = '<div style="flex:1;min-width:0;">' +
-                    '<div style="font-size:12.5px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.name || u.email) + (u.banned ? ' <span style="color:#fbbf24;font-size:11px;">' + I18N.t('adminBannedSuffix') + '</span>' : '') + '</div>' +
+                    '<div style="font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.name || u.email) + (u.banned ? ' <span style="color:#fbbf24;font-size:11px;">' + I18N.t('adminBannedSuffix') + '</span>' : '') + '</div>' +
                     '<div style="font-size:11px;color:var(--muted);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(u.email) + '</div></div>' +
                     '<button type="button" class="admin-btn-ghost" data-action="toggle" data-email="' + esc(u.email) + '" data-banned="' + u.banned + '" style="padding:5px 10px;font-size:11px;white-space:nowrap;">' + (u.banned ? I18N.t('adminUnban') : I18N.t('adminBan')) + '</button>' +
                     (canDelete ? '<button type="button" class="admin-btn-ghost" data-action="del" data-email="' + esc(u.email) + '" data-name="' + esc(u.name || u.email) + '" style="padding:5px 10px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminDelete') + '</button>' : '<span style="padding:5px 10px;font-size:11px;color:var(--muted);opacity:0.4;user-select:none;" title="' + I18N.t('adminDeletePrimaryOnly') + '">🔒</span>');
@@ -2047,8 +2248,8 @@
                 const isPrimary = primaryAdmin !== '' && email.toLowerCase() === primaryAdmin;
                 const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
                 const row = document.createElement('div');
-                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
-                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--panel-sub);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:var(--text);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
                     (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">' + I18N.t('adminYou') + '</span>' : '') +
                     (isPrimary ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,0.2);color:#fbbf24;white-space:nowrap;">' + I18N.t('adminPrimary') + '</span>' : '') +
                     (isPrimary ? '' : '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminRemove') + '</button>');
@@ -2090,8 +2291,8 @@
             allowed.forEach(email => {
                 const isCurrent = email.toLowerCase() === currentUser.toLowerCase();
                 const row = document.createElement('div');
-                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,0.5);border:1px solid var(--border);border-radius:8px;';
-                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:#f1f5f9;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--panel-sub);border:1px solid var(--border);border-radius:8px;';
+                row.innerHTML = '<span style="flex:1;min-width:0;font-size:12px;color:var(--text);direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(email) + '</span>' +
                     (isCurrent ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(16,185,129,0.2);color:#34d399;white-space:nowrap;">' + I18N.t('adminYou') + '</span>' : '') +
                     '<button type="button" class="admin-btn-ghost" data-email="' + esc(email) + '" style="padding:4px 9px;font-size:11px;color:#f87171;white-space:nowrap;">' + I18N.t('adminRemove') + '</button>';
                 allowedListEl.appendChild(row);
@@ -2486,7 +2687,7 @@
 
     function resetDetailFilters() {
         AppState.detailFilters = {
-            datePreset: 'all',
+            datePreset: 'month',
             csatScore: 'all',
             channel: 'all',
             topSessions: 'all',
@@ -2657,9 +2858,10 @@
         if (analyticsSel) analyticsSel.innerHTML = `<option value="">${I18N.t('analyticsAllAgentsOption')}</option>`;
 
         AppState.agents.forEach(a => {
-            const opt = new Option(`${a.name} (${a.email})`, a.email);
+            const label = a.name || a.email;
+            const opt = new Option(label, a.email);
             agentSel.add(opt);
-            if (analyticsSel) analyticsSel.add(new Option(`${a.name} (${a.email})`, a.email));
+            if (analyticsSel) analyticsSel.add(new Option(label, a.email));
         });
         if (analyticsSel && AppState.agents.some(a => a.email === currentAnalytics)) analyticsSel.value = currentAnalytics;
 
@@ -2787,7 +2989,30 @@
             if (el('metric')) el('metric').value = metric;
 
             const agent = AppState.agents.find(a => a.email === AppState.selectedAgent) || { name: AppState.selectedAgent, email: AppState.selectedAgent };
-            el('detailAgent').textContent = agent.name;
+
+            let csatRate = null;
+            if (!isBlank(agent.csat)) {
+                csatRate = Number(agent.csat);
+            } else if (!isBlank(agent.csatGood) || !isBlank(agent.csatBad)) {
+                const g = Number(agent.csatGood) || 0;
+                const b = Number(agent.csatBad) || 0;
+                if (g + b > 0) csatRate = (g / (g + b)) * 100;
+            }
+
+            let csatBadgeHtml = '';
+            if (csatRate !== null && !isNaN(csatRate)) {
+                let targetCls = 'csat-target-bad';
+                if (csatRate >= 90) {
+                    targetCls = 'csat-target-good';
+                } else if (csatRate >= 75) {
+                    targetCls = 'csat-target-warn';
+                }
+                csatBadgeHtml = `<span class="agent-title-csat-badge ${targetCls}" title="CSAT Satisfaction Rate: ${csatRate.toFixed(1)}%">${csatRate.toFixed(1)}%</span>`;
+            } else {
+                csatBadgeHtml = `<span class="agent-title-csat-badge csat-target-none" title="No CSAT data">—</span>`;
+            }
+
+            el('detailAgent').innerHTML = `${escapeHtml(agent.name)}${csatBadgeHtml}`;
             el('detailMetric').textContent = METRIC_LABELS[metric] || metric;
             el('colCountBadge').textContent = agent.email;
             el('meta').textContent = I18N.t('agentMeta', { email: agent.email });
@@ -2814,6 +3039,7 @@
         dateGroup.innerHTML = `
             <label>${I18N.t('filterDateRange')}</label>
             <select id="fltDate">
+                <option value="month">${I18N.t('filterThisMonth')}</option>
                 <option value="all">${I18N.t('filterAllPeriod')}</option>
                 <option value="today">${I18N.t('filterToday')}</option>
                 <option value="yesterday">${I18N.t('filterYesterday')}</option>
@@ -2962,6 +3188,42 @@
         return { day: last.day, sessions: isFinite(n) ? n : 0 };
     }
 
+    // إجمالي الجلسات الطويلة (≥ 20 دقيقة) للوكيل
+    function agentLongSessions_(email) {
+        const ag = (AppState.agents || []).find(a => String(a.email || '').toLowerCase() === String(email || '').toLowerCase());
+        if (ag && (ag.longSessions !== undefined || ag.long !== undefined)) {
+            const n = Number(ag.longSessions !== undefined ? ag.longSessions : ag.long);
+            if (!isNaN(n)) return n;
+        }
+        const active = (typeof currentAnalyticsEmail === 'function') ? currentAnalyticsEmail() : '';
+        if (active && String(active).toLowerCase() === String(email || '').toLowerCase()) {
+            const days = Array.isArray(AppState.chartDays) ? AppState.chartDays : [];
+            if (days.length) {
+                return days.reduce((s, d) => s + (Number(d.long || d.longSessions) || 0), 0);
+            }
+        }
+        if (AppState.activeDrillData && AppState.activeDrillData.rows && AppState.selectedMetric === 'abst') {
+            const h = (AppState.activeDrillData.header || []).map(c => String(c).toLowerCase().trim());
+            const aIdx = findHeaderCol(h, 'basket_session_time_min', 'session_time_min', 'basket_session_time', 'session_time', 'abst');
+            if (aIdx !== -1) {
+                let cnt = 0;
+                AppState.activeDrillData.rows.forEach(r => {
+                    const s = String(r[aIdx] || '').trim();
+                    let mins = 0;
+                    if (s.includes(':')) {
+                        const p = s.split(':');
+                        mins = (parseInt(p[0], 10) || 0) + (parseInt(p[1], 10) || 0) / 60;
+                    } else {
+                        mins = parseFloat(s) || 0;
+                    }
+                    if (mins >= 20) cnt++;
+                });
+                return cnt;
+            }
+        }
+        return 0;
+    }
+
     function renderMetricSummaryBarSingleAgent(agent, metric) {
         const bar = el('metricSummary');
         if (!bar) return;
@@ -3014,13 +3276,17 @@
             else csatColor = '#ef4444';
         }
 
-        // عرض مختصر (نفس نمط شريط الإحصائيات): عنوان صغير + قيمة ملوّنة بلون المقياس
+        const longVal = agentLongSessions_(agent.email);
+        const longDisplay = isNaN(longVal) ? '—' : String(longVal);
+        const longLabel = I18N.currentLang === 'ar' ? 'جلسات ≥ 20 د:' : 'Sessions ≥ 20 mins:';
+
+        // عرض مختصر: استبدال مربع CSAT المكرر بجلسات ≥ 20 دقيقة باللون الأحمر، مع إبقاء Good و Bad
         const items = [
             { label: I18N.t('agentTotalSessionsLabel'), val: isBlank(agent.sessions) ? '—' : agent.sessions, color: 'var(--m-sessions)' },
             { label: lastDayLabel, val: lastDay ? lastDay.sessions : '—', color: 'var(--m-sessions)' },
-            { label: 'CSAT:', val: isBlank(agent.csat) ? '—' : agent.csat + '%', color: csatColor },
-            { label: I18N.t('agentGoodCsatLabel'), val: goodDisplay, color: '#34d399' },
-            { label: I18N.t('agentBadCsatLabel'), val: badDisplay, color: '#f87171' },
+            { label: longLabel, val: longDisplay, color: '#ef4444' },
+            { label: I18N.t('agentGoodCsatLabel'), val: goodDisplay, color: '#10b981' },
+            { label: I18N.t('agentBadCsatLabel'), val: badDisplay, color: '#ef4444' },
             { label: 'AGBT:', val: fmtTimeStr(agent.agbt), color: 'var(--m-agbt)' },
             { label: 'ABST:', val: fmtTimeStr(agent.abst), color: 'var(--purple)' },
             { label: latenessLabel, val: fmtMinutes(agent.lateness), color: 'var(--m-late)' },
@@ -3982,7 +4248,7 @@
         rows.forEach((r, i) => {
             const ticket = String(r.ticket || '').trim();
             const ticketCell = ticket
-                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>'
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
                 : '—';
             html += '<tr>';
             html += '<td class="drill-idx">' + (i + 1) + '</td>';
@@ -4156,6 +4422,21 @@
         return escapeHtml(text);
     }
 
+    // رابط فتح التكت في الباك أوفيس (BO) في تبويب جديد
+    function boTicketLink(ticketId) {
+        const id = String(ticketId == null ? '' : ticketId).trim();
+        if (!id || id === '—') return '';
+        const url = 'https://backoffice.tabby.sa/tickets/' + encodeURIComponent(id);
+        return ' <a class="bo-ticket-link" href="' + url + '" target="_blank" rel="noopener noreferrer" title="Open in Backoffice">BO <span aria-hidden="true">↗</span></a>';
+    }
+    function isTicketIdCol_(colName) {
+        const c = String(colName || '').toLowerCase().trim();
+        if (!c) return false;
+        if (c.includes('channel') || c.includes('country') || c.includes('status')) return false;
+        return c.includes('ticket_id') || c.includes('ticket id') || c.includes('ticket_number') ||
+            c.includes('ticket number') || c === 'ticket' || c.includes('session_id') || c.includes('session id');
+    }
+
     function formatDrillCell(val, colName) {
         if (val === null || val === undefined || String(val).trim() === '' || val === '—') {
             return `<span style="color:var(--muted); opacity:0.6;">—</span>`;
@@ -4229,6 +4510,7 @@
             }
         }
 
+        if (isTicketIdCol_(colName)) return escapeHtml(text) + boTicketLink(text);
         return escapeHtml(text);
     }
 
@@ -4272,9 +4554,19 @@
             btn.className = 'agent-tab-btn' + (AppState.activeTabId === tabId ? ' active' : '');
             btn.setAttribute('role', 'tab');
             btn.setAttribute('aria-selected', AppState.activeTabId === tabId ? 'true' : 'false');
+            const agentObj = (AppState.agents || []).find(a => String(a.email || '').toLowerCase() === String(tab.email || '').toLowerCase());
+            let tabCsatHtml = '';
+            if (agentObj && !isBlank(agentObj.csat)) {
+                const cVal = Number(agentObj.csat);
+                let targetCls = 'csat-target-bad';
+                if (cVal >= 90) targetCls = 'csat-target-good';
+                else if (cVal >= 75) targetCls = 'csat-target-warn';
+                tabCsatHtml = `<span class="agent-tab-csat-pill ${targetCls}" title="CSAT: ${cVal.toFixed(1)}%">${cVal.toFixed(1)}%</span>`;
+            }
+
             btn.innerHTML = `
                 <span class="agent-tab-icon">👤</span>
-                <span class="agent-tab-name">${escapeHtml(tab.name || tab.email)}</span>
+                <span class="agent-tab-name">${escapeHtml(tab.name || tab.email)}${tabCsatHtml}</span>
                 <span class="agent-tab-close" title="${I18N.currentLang === 'ar' ? 'إغلاق التبويب' : 'Close tab'}">×</span>
             `;
             btn.addEventListener('click', (e) => {
@@ -4513,11 +4805,23 @@
             if (fltDate !== 'all') {
                 const d = extractCellDate(row, header);
                 if (!d) return false;
-                const today = new Date().toISOString().slice(0, 10);
+                const now = new Date();
+                const today = now.toISOString().slice(0, 10);
                 if (fltDate === 'today' && d !== today) return false;
                 if (fltDate === 'yesterday') {
                     const y = new Date(); y.setDate(y.getDate() - 1);
                     if (d !== y.toISOString().slice(0, 10)) return false;
+                }
+                if (fltDate === 'week' || fltDate === 'month') {
+                    let start;
+                    if (fltDate === 'week') {
+                        const dow = (now.getDay() + 6) % 7;
+                        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+                    } else {
+                        start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    }
+                    const startIso = start.getFullYear() + '-' + String(start.getMonth() + 1).padStart(2, '0') + '-' + String(start.getDate()).padStart(2, '0');
+                    if (d < startIso || d > today) return false;
                 }
             }
             return true;
@@ -4698,14 +5002,14 @@
             if (el('kpiBreachFill')) el('kpiBreachFill').style.width = `${Math.min(100, (totalBreachMins / (AppState.agents.length * 30 || 1)) * 100)}%`;
 
             // AGBT الفعلي: متوسط كل الوكلاء
-            let agbtSecsSum = 0, agbtCount = 0;
+            let agbtMinsSum = 0, agbtCount = 0;
             AppState.agents.forEach(a => {
-                const secs = parseTimeToSeconds(a.agbt);
-                if (secs !== 999999 && secs > 0) { agbtSecsSum += secs; agbtCount++; }
+                const m = typeof a.agbt === 'number' ? a.agbt : (parseTimeToSeconds(a.agbt) / 60);
+                if (!isNaN(m) && m > 0 && m < 16666) { agbtMinsSum += m; agbtCount++; }
             });
-            const agbtAvgSecs = agbtCount > 0 ? Math.round(agbtSecsSum / agbtCount) : 0;
-            if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = formatDuration(agbtAvgSecs / 60);
-            if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtAvgSecs / 600) * 100)}%`;
+            const agbtAvgMins = agbtCount > 0 ? (agbtMinsSum / agbtCount) : 0;
+            if (el('kpiAgbtVal')) el('kpiAgbtVal').textContent = formatDuration(agbtAvgMins);
+            if (el('kpiAgbtFill')) el('kpiAgbtFill').style.width = `${Math.min(100, (agbtAvgMins / 10) * 100)}%`;
 
             // Idle الفعلي: متوسط كل الوكلاء
             let idleHoursSum = 0, idleCount = 0;
@@ -4721,12 +5025,12 @@
             if (el('kpiIdleFill')) el('kpiIdleFill').style.width = `${Math.min(100, (idleAvgHours / 2) * 100)}%`;
 
             // ABST الفعلي: متوسط كل الوكلاء
-            let abstSecsSum = 0, abstCount = 0;
+            let abstMinsSum = 0, abstCount = 0;
             AppState.agents.forEach(a => {
-                const secs = parseTimeToSeconds(a.abst);
-                if (secs !== 999999 && secs > 0) { abstSecsSum += secs; abstCount++; }
+                const m = typeof a.abst === 'number' ? a.abst : (parseTimeToSeconds(a.abst) / 60);
+                if (!isNaN(m) && m > 0 && m < 16666) { abstMinsSum += m; abstCount++; }
             });
-            const abstAvgSecs = abstCount > 0 ? Math.round(abstSecsSum / abstCount) : 0;
+            const abstAvgMins = abstCount > 0 ? (abstMinsSum / abstCount) : 0;
 
             // نقل أرقام الفريق إلى مربع الإحصائيات السفلي (بديل بطاقات KPI العلوية)
             let totalGoodCsat = 0, totalBadCsat = 0, totalEvalCsat = 0;
@@ -4746,8 +5050,8 @@
                     el('teamStatCsat').style.color = num >= 90 ? '#10b981' : (num >= 75 ? '#f59e0b' : '#ef4444');
                 }
             }
-            if (el('teamStatAgbt')) el('teamStatAgbt').textContent = agbtCount > 0 ? formatDuration(agbtAvgSecs / 60) : '—';
-            if (el('teamStatAbst')) el('teamStatAbst').textContent = abstCount > 0 ? formatDuration(abstAvgSecs / 60) : '—';
+            if (el('teamStatAgbt')) el('teamStatAgbt').textContent = agbtCount > 0 ? formatDuration(agbtAvgMins) : '—';
+            if (el('teamStatAbst')) el('teamStatAbst').textContent = abstCount > 0 ? formatDuration(abstAvgMins) : '—';
             if (el('teamStatBreach')) {
                 el('teamStatBreach').textContent = breachCountText(totalBreaches);
                 el('teamStatBreach').title = breachExceedText(totalBreachMins);
@@ -6328,6 +6632,26 @@
                 }
             });
 
+            // الجلسات الطويلة ≥ 20 دقيقة
+            let longSessionsCount = 0;
+            recs.filter(r => r.metric === 'abst').forEach(r => {
+                const h = r.header.map(c => String(c).toLowerCase().trim());
+                const sIdx = findHeaderCol(h, 'basket_session_time_min', 'session_time_min', 'basket_session_time', 'session_time', 'abst');
+                r.rows.forEach(row => {
+                    if (sIdx !== -1) {
+                        const s = String(row[sIdx] || '').trim();
+                        let mins = 0;
+                        if (s.includes(':')) {
+                            const p = s.split(':');
+                            mins = (parseInt(p[0], 10) || 0) + (parseInt(p[1], 10) || 0) / 60;
+                        } else {
+                            mins = parseFloat(s) || 0;
+                        }
+                        if (mins >= 20) longSessionsCount++;
+                    }
+                });
+            });
+
             agents.push({
                 name: displayName,
                 email: email,
@@ -6342,6 +6666,7 @@
                 sessions: (recs.filter(r => r.metric === 'abst').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)
                     || recs.filter(r => r.metric === 'agbt').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)
                     || recs.filter(r => r.metric === 'csat').reduce((s, r) => s + (r.rows ? r.rows.length : 0), 0)),
+                longSessions: longSessionsCount,
                 lateness: latenessFormatted,
                 idle: idleAvg,
                 productivity: prodVal

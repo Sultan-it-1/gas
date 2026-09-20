@@ -1142,6 +1142,24 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
   }
   const agbtAvg = agbtCount > 0 ? Math.round((agbtSum / agbtCount) * 100) / 100 : null;
 
+  // 2.1 حساب ABST الإجمالي
+  let abstSum = 0, abstCount = 0;
+  const abstRecords = list.filter(r => r.metric === 'abst');
+  for (const rec of abstRecords) {
+    const h = (rec.header || []).map(col => String(col).toLowerCase().trim());
+    const abstColIdx = findColIndex(h, 'basket_session_time_min', 'session_time', 'basket_session_time', 'abst', 'time');
+    for (const row of rec.rows || []) {
+      if (abstColIdx !== -1) {
+        const val = parseFloat(row[abstColIdx]);
+        if (!isNaN(val)) {
+          abstSum += val;
+          abstCount++;
+        }
+      }
+    }
+  }
+  const abstAvg = abstCount > 0 ? Math.round((abstSum / abstCount) * 100) / 100 : null;
+
   // 3. حساب تجاوزات البريك ودقائق التأخير
   const overallBreak = extractBreakMetrics(list);
   const overallLateness = extractLatenessMetrics(list);
@@ -1483,6 +1501,7 @@ function calculateAnalytics(records, agentFilter = null, shiftCutoffHour = 0, sh
     metricCounts,
     csat: { total: csatTotal, good: csatGood, bad: csatBad, pct: csatPct, byCountry: csatByCountry, byChannel: csatByChannel },
     agbt: { avg: agbtAvg, tickets: agbtTickets, basketHours: Math.round(agbtBasketHours * 100) / 100 },
+    abst: { avg: abstAvg, sessions: abstCount },
     breakBreach: {
       breaches: overallBreak.breaches,
       met: 0,
@@ -3138,6 +3157,8 @@ function getAgentDrillPageFromSheetImpl_(email, metric, opts) {
   const pageSize = Math.min(500, Math.max(10, parseInt(opts.pageSize, 10) || 50));
   const search = String(opts.search || '').toLowerCase().trim();
   const datePreset = opts.datePreset || 'all';
+  const rangeStart = String(opts.rangeStart || '').trim();
+  const rangeEnd = String(opts.rangeEnd || '').trim();
   const csatScore = opts.csatScore || 'all';
   const channel = opts.channel || 'all';
   const topSessions = opts.topSessions || 'all';
@@ -3182,6 +3203,8 @@ function getAgentDrillPageFromSheetImpl_(email, metric, opts) {
   const yesterday = Utilities.formatDate(yDate, 'Asia/Riyadh', 'yyyy-MM-dd');
   const weekDate = new Date(); weekDate.setDate(weekDate.getDate() - 7);
   const weekStart = Utilities.formatDate(weekDate, 'Asia/Riyadh', 'yyyy-MM-dd');
+  const monthDate = new Date(); monthDate.setDate(1);
+  const monthStart = Utilities.formatDate(monthDate, 'Asia/Riyadh', 'yyyy-MM-dd');
 
   let filtered = rows.filter(function (row) {
     // بحث حر عبر أي خلية
@@ -3220,6 +3243,15 @@ function getAgentDrillPageFromSheetImpl_(email, metric, opts) {
       if (datePreset === 'today' && d !== today) return false;
       if (datePreset === 'yesterday' && d !== yesterday) return false;
       if (datePreset === 'week' && (d < weekStart || d > today)) return false;
+      if (datePreset === 'month' && (d < monthStart || d > today)) return false;
+    }
+
+    // فلتر نطاق تاريخ صريح (لخلايا الجداول الأسبوعي/الشهري)
+    if (rangeStart || rangeEnd) {
+      const rd = extractRowDate(row, header);
+      if (!rd) return false;
+      if (rangeStart && rd < rangeStart) return false;
+      if (rangeEnd && rd > rangeEnd) return false;
     }
 
     return true;
@@ -3943,7 +3975,7 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
     }
 
     // استرداد سريع من الكاش (يمنع إعادة قراءة كل ملفات Drive في كل مرة)
-    const cacheKey = 'PERIOD_TABLE_' + m + '_' + type + '_' + langKey + (monthKey ? '_' + monthKey : '');
+    const cacheKey = 'PERIOD_TABLE_v2_' + m + '_' + type + '_' + langKey + (monthKey ? '_' + monthKey : '');
     try {
       const cachedRaw = CacheService.getScriptCache().get(cacheKey);
       if (cachedRaw) {
@@ -4001,7 +4033,17 @@ function getAgentsPeriodTableImpl_(metric, periodType, lang, targetMonth) {
       periodType: type,
       month: targetMonth || '',
       metricLabel: metricLabelForPeriod(m, lang),
-      periods: periods.map(p => ({ key: p.key, label: p.label, range: p.range || '' })),
+      periods: periods.map(p => {
+        let start = '', end = '';
+        if (type === 'monthly') {
+          start = p.year + '-' + String(p.month).padStart(2, '0') + '-01';
+          end = p.year + '-' + String(p.month).padStart(2, '0') + '-' + String(new Date(p.year, p.month, 0).getDate()).padStart(2, '0');
+        } else {
+          start = p.year + '-' + String(p.month).padStart(2, '0') + '-' + String(p.startDay).padStart(2, '0');
+          end = p.year + '-' + String(p.month).padStart(2, '0') + '-' + String(p.endDay).padStart(2, '0');
+        }
+        return { key: p.key, label: p.label, range: p.range || '', start: start, end: end };
+      }),
       agents: rows
     };
 
