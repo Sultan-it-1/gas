@@ -30,7 +30,7 @@
     // ============================================================================
     const CHART_METRIC_TABS = {
         day: ['csat', 'abst', 'agbt', 'sessions', 'long'],
-        agent: ['csat', 'abst', 'agbt', 'idle', 'lateness', 'breakBreach']
+        agent: ['csat', 'abst', 'agbt', 'idle', 'lateness', 'breakBreach', 'sessions', 'long']
     };
 
     function chartTabLabelKey_(metric) {
@@ -6890,7 +6890,7 @@
                 const metricColumns = {
                     idle: /^(date|day|report_dt|plan_shift_start|time_not_working_h|time_not_working_h_shift_adjusted)$/,
                     lateness: /^(date|day|report_dt|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
-                    breakbreach: /^(date|day|report_dt|plan_shift_start|plan_breaks_h|fact_breaks_h|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
+                    breakbreach: /^(date|day|report_dt|plan_shift_start|plan_breaks_h|fact_breaks_h|break_exceed|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
                     csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel|status|status_before_closure)$/,
                     abst: /^(ticket_id|ticket_number|created_at_dubai|date|day|basket_session_time_min|session_time_min|abst)$/,
                     agbt: /^(ticket_id|ticket_number|created_at_dubai|date|day|sum_basket_time_for_ticket_per_hour_min_online_womt|sum_basket_time_for_ticket_per_hour_min|basket_time|agbt|contribution|المساهمة)$/
@@ -6916,7 +6916,7 @@
                     // Prefer the actual Idle source; adjusted is a fallback, not a second KPI.
                     const duplicateIdle = metricKey === 'idle' && normalized === 'time_not_working_h_shift_adjusted' &&
                         headers.some(h => String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_') === 'time_not_working_h');
-                    const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate;
+                    const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate && metricKey !== 'lateness';
                     const duplicateColumn = !!metricColumns[metricKey] && seenSimpleColumns.has(normalized);
                     seenSimpleColumns.add(normalized);
                     const keepCsatStatus = metricKey === 'csat' && (normalized === 'status' || normalized === 'status_before_closure');
@@ -6942,6 +6942,8 @@
                                 if (match) { cell.title = rawTime; cell.textContent = match[1]; }
                             }
                         } else if (!simple) cell.classList.remove('lateness-time-cell');
+                        if (simple && metricKey === 'lateness' && datePriority.includes(normalized)) cell.classList.add('lateness-date-cell');
+                        else if (!simple) cell.classList.remove('lateness-date-cell');
                         let saved = ticketCells.get(cell);
                         if (simple && !saved) {
                             const bo = cell.querySelector('a.bo-ticket-link');

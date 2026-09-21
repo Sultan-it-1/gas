@@ -3110,7 +3110,7 @@ function getAgentDailyTimelineImpl_(email, byShift, shiftStartHour, shiftEndHour
  * يعيد لكل وكيل قيمة المقياس المطلوب خلال نطاق التاريخ/الشهر المحدد.
  * ============================================================================
  */
-const CHART_METRIC_KEYS = ['csat', 'agbt', 'abst', 'idle', 'lateness', 'breakBreach'];
+const CHART_METRIC_KEYS = ['csat', 'agbt', 'abst', 'idle', 'lateness', 'breakBreach', 'sessions', 'long'];
 
 function getAgentsChartCacheVersion() {
   try { return CacheService.getScriptCache().get('CHART_AGENTS_VER') || '0'; } catch (e) { return '0'; }
@@ -3188,13 +3188,16 @@ function getAgentsChartDataImpl_(metric, startDay, endDay, targetMonth) {
       records = readAgentRecordsForMonth(email, month, drillsIndex, m === 'abst' ? 'abst' : null);
       if (start || end) records = filterRecordsToDateRange(records, start, end);
       const analytics = calculateAnalytics(records);
+      const activeDays = (analytics.timeline || []).filter(d => Number(d.sessions) > 0).length;
+      const dailySessions = activeDays > 0 ? (Number(analytics.agentStats[email] && analytics.agentStats[email].sessions) || 0) / activeDays : 0;
+      const dailyLongSessions = activeDays > 0 ? (analytics.timeline || []).reduce((sum, d) => sum + (Number(d.longSessions || d.long) || 0), 0) / activeDays : 0;
       let stat = analytics.agentStats[email];
       if (!stat) {
         const k = Object.keys(analytics.agentStats).find(k => k.toLowerCase() === email.toLowerCase());
         if (k) stat = analytics.agentStats[k];
       }
       computedKeys.forEach(key => {
-        const entry = { email: email, name: a.name || email, value: getAgentMetricValue(stat, key) };
+        const entry = { email: email, name: a.name || email, value: key === 'sessions' ? dailySessions : key === 'long' ? dailyLongSessions : getAgentMetricValue(stat, key) };
         if (key === 'breakBreach') entry.breaches = (stat && stat.breakBreaches) || 0;
         resultsByMetric[key].push(entry);
       });
