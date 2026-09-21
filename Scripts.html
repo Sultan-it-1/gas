@@ -6890,7 +6890,7 @@
                 const metricColumns = {
                     idle: /^(date|day|report_dt|plan_shift_start|time_not_working_h|time_not_working_h_shift_adjusted)$/,
                     lateness: /^(date|day|report_dt|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
-                    breakbreach: /^(date|day|report_dt|plan_shift_start|plan_breaks_h|fact_breaks_h|break_exceed|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
+                    breakbreach: /^(date|day|report_dt|break_exceed|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
                     csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel|status|status_before_closure)$/,
                     abst: /^(ticket_id|ticket_number|created_at_dubai|date|day|basket_session_time_min|session_time_min|abst)$/,
                     agbt: /^(ticket_id|ticket_number|created_at_dubai|date|day|sum_basket_time_for_ticket_per_hour_min_online_womt|sum_basket_time_for_ticket_per_hour_min|basket_time|agbt|contribution|المساهمة)$/
@@ -6902,6 +6902,15 @@
                 const breakValueIndexes = metricKey === 'breakbreach'
                     ? columnKeys.map((c, i) => /^(break_exceed|break_exceed_mins|break_exceed_minutes|exceed_mins|exceed_minutes|exceed|break_exceed_time)$/.test(c) ? i : -1).filter(i => i >= 0)
                     : [];
+                if (simple && metricKey === 'lateness') {
+                    const dateIndex = columnKeys.findIndex(c => /^(date|day|report_dt)$/.test(c));
+                    if (dateIndex > 0) {
+                        const move = (row) => { const cells = Array.from(row.children); const cell = cells[dateIndex]; if (cell) row.insertBefore(cell, row.firstElementChild); };
+                        move(table.tHead && table.tHead.rows[0]);
+                        Array.from(table.tBodies).forEach(body => Array.from(body.rows).forEach(move));
+                        headers.splice(0, headers.length, ...Array.from(table.querySelectorAll('thead th')));
+                    }
+                }
                 toolbar.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'simple') === simple)));
                 table.classList.toggle('metric-table-simple', simple);
                 headers.forEach((th, index) => {
@@ -6972,6 +6981,10 @@
                                     !/^(no|false|not met|لا|غير متجاوز)$/.test(value);
                             });
                         } else if (!simple || metricKey !== 'breakbreach') row.hidden = false;
+                        if (simple && metricKey === 'lateness' && datePriority.includes(normalized)) {
+                            const today = new Date().toISOString().slice(0, 10);
+                            if (String(cell.textContent).trim().slice(0, 10) === today) row.classList.add('lateness-today-row');
+                        }
                     }));
                 });
             });
