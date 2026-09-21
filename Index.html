@@ -109,7 +109,7 @@
     <nav class="main-view-tabs" role="tablist" aria-label="Dashboard Sections">
         <button type="button" class="main-view-tab-btn active" role="tab" id="tabDataView" aria-selected="true" aria-controls="viewDataSection">
             <span class="tab-icon" aria-hidden="true">📋</span>
-            <span data-i18n="tabDataView">Results & Data Table</span>
+                            <span data-i18n="tabDataView">Table</span>
         </button>
         <button type="button" class="main-view-tab-btn" role="tab" id="tabStatsView" aria-selected="false" aria-controls="viewStatsSection">
             <span class="tab-icon" aria-hidden="true">📊</span>
@@ -170,6 +170,12 @@
                     </div>
                     <h2 data-i18n="emptyDataTitle">Details in One Place</h2>
                     <p class="muted" data-i18n="emptyDataDesc">No data recorded in Google Sheet yet. Open the dashboard and use the extension to sync data.</p>
+                </div>
+
+                <!-- Loading state while data is being fetched -->
+                <div id="mainLoading" class="empty main-loading" hidden>
+                    <div class="loading-spinner" aria-hidden="true"></div>
+                    <h2 data-i18n="cloudUpdating">🔄 Loading data from Sheet...</h2>
                 </div>
 
                 <!-- Detail Container (Active for both All Agents & Single Agent) -->

@@ -849,6 +849,19 @@ input:focus, select:focus, textarea:focus {
     font-size: 36px;
 }
 
+.main-loading h2 { font-size: 16px; font-weight: 600; color: var(--text-sub); margin: 0; }
+.loading-spinner {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 20px;
+    border-radius: 50%;
+    border: 4px solid rgba(var(--accent-rgb), 0.18);
+    border-top-color: var(--accent);
+    animation: spinLoader 0.8s linear infinite;
+}
+@keyframes spinLoader { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
+
 .detail-head {
     display: flex;
     justify-content: space-between;
@@ -2481,6 +2494,20 @@ html[dir="rtl"] .period-table .period-agent-col {
     border-radius: 3px;
     background: rgba(56, 189, 248, 0.12);
 }
+.rank-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--panel-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    transition: border-color .18s ease, background .18s ease;
+}
+.rank-item:hover { border-color: rgba(var(--blue-rgb), 0.35); }
+.rank-item.current-active-agent { border-color: var(--accent); }
+.rank-item > div:last-child { align-self: flex-start; }
 .tie-break-badge {
     display: inline-flex;
     align-items: center;
@@ -2525,6 +2552,10 @@ html[dir="rtl"] .period-table .period-agent-col {
 }
 
 .period-cell.empty {
+    min-height: 0;
+    height: auto;
+    display: inline-block;
+    padding: 3px 8px;
     color: var(--muted);
     opacity: 0.5;
     background: transparent;
@@ -4840,7 +4871,7 @@ tbody td { padding: 11px 12px; }
     padding: 7px 10px; font-size: 12px; line-height: 1.4;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.period-table { table-layout: fixed; width: 840px; min-width: 0; }
+.period-table { table-layout: fixed; width: 100%; min-width: 720px; }
 .period-table td.period-cell { display: table-cell; }
 .period-table th, .period-table td {
     padding: 7px 10px; font-size: 12px; line-height: 1.4;
@@ -4944,4 +4975,133 @@ tbody td { padding: 11px 12px; }
 .table-scroll-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .simple-ticket-number { color: var(--accent); font-family: monospace; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .simple-ticket-number:hover { color: var(--text); }
+.ticket-copy {
+    display: inline-flex; align-items: center; justify-content: center;
+    vertical-align: middle; margin-inline-start: 6px; padding: 2px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel-sub, transparent); color: var(--muted);
+    cursor: pointer; line-height: 0; transition: color .15s, border-color .15s, background .15s;
+}
+.ticket-copy:hover { color: var(--accent); border-color: var(--accent); }
+.ticket-copy.copied { color: var(--ok, #10b981); border-color: var(--ok, #10b981); }
+.ticket-copy svg { pointer-events: none; }
+.chart-drilldown-ticket + .ticket-copy, .bo-ticket-link + .ticket-copy { margin-inline-start: 6px; }
+/* Empty period values are small badges, not full-page empty states. */
+.period-table tbody tr { height: 36px; }
+.period-table tbody td { height: 36px; padding: 5px 8px; }
+.period-table .period-cell { min-height: 0; line-height: 1.3; }
+.table-wrap #dataTable th, .table-wrap #dataTable td {
+    width: 130px; max-width: 150px; padding: 6px 9px;
+}
+.table-wrap #dataTable th:has(.sort-icon):first-child { max-width: 150px; }
+.table-wrap #dataTable td.col-rank,
+.table-wrap #dataTable th.col-rank {
+    width: 38px !important; min-width: 38px !important; max-width: 38px !important;
+    padding: 6px 3px; text-align: center;
+}
+.table-wrap #dataTable:has(td.col-rank) { width: 100%; min-width: 1000px; }
+.table-wrap #dataTable:has(td.col-rank) th:nth-child(2),
+.table-wrap #dataTable:has(td.col-rank) td:nth-child(2) { width: 180px; max-width: 180px; }
+
+/* ==========================================================================
+   MOBILE CONSISTENCY (phones incl. Android) — presentation only
+   ========================================================================== */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+a, button, .button, .chart-tab-btn, .main-view-tab-btn, .result-card { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 900px) {
+    button, .button, select, .chart-tab-btn, .chart-mode-btn, .main-view-tab-btn,
+    .result-card, .ticket-copy, .bo-ticket-link, .agent-tab-btn { touch-action: manipulation; }
+    button, .button, select { min-height: 38px; }
+    .table-wrap, .period-table-wrap, .chart-container-wrap, .chart-drilldown-scroll {
+        overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    }
+    .admin-modal-card, .chart-drilldown-card { max-height: 92vh; max-height: 92dvh; }
+}
+@media (max-width: 768px) {
+    html, body { overflow-x: hidden; max-width: 100%; }
+    .shell { padding: 18px 14px 34px; }
+
+    .topbar { gap: 10px; margin-bottom: 8px; }
+    .topbar-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+    .topbar-actions > .button, .topbar-actions > label, .topbar-actions select { flex: 1 1 140px; justify-content: center; }
+    .month-selector-wrap, .month-select { width: 100%; }
+
+    .main-view-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; overflow-x: visible; }
+    .main-view-tab-btn { padding: 10px 6px; font-size: 12px; white-space: normal; line-height: 1.4; justify-content: center; }
+
+    .workspace { grid-template-columns: 1fr; gap: 14px; }
+    .panel { padding: 14px; }
+    .results-panel { max-width: 100%; }
+    .result-list { max-height: 240px; }
+
+    .detail-head { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px 14px; }
+    .detail-title-block h2, #detailAgent { font-size: 20px; }
+    .detail-actions { width: 100%; flex-wrap: wrap; gap: 8px; }
+    .detail-actions .filter-group { min-width: 0 !important; width: 100%; }
+    .detail-actions select, .detail-actions .button { width: 100%; }
+
+    .metric-filter-toolbar { padding: 12px; }
+    .filter-toolbar-header { flex-wrap: wrap; gap: 8px; }
+    .filter-controls-grid { grid-template-columns: 1fr !important; }
+    .filter-controls-grid .filter-group,
+    .filter-controls-grid .filter-group select { width: 100%; }
+    .btn-reset-filters { width: 100%; }
+
+    .search-row { flex-direction: column; align-items: stretch; padding: 12px; gap: 8px; }
+    .search-input-wrap { width: 100%; }
+
+    .metric-summary-bar { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; padding: 12px; gap: 8px; }
+    .summary-pill { padding: 10px 12px; }
+    .analytics-secondary-strip { grid-template-columns: 1fr !important; gap: 8px; }
+    .analytics-split-grid { grid-template-columns: 1fr !important; }
+
+    .table-wrap { margin: 0 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+    .table-wrap table, .period-table, .chart-drilldown-table { font-size: 11.5px; }
+    .table-wrap #dataTable:has(td.col-rank) { min-width: 820px; }
+    thead th, .period-table thead th, .chart-drilldown-table th { padding: 9px 10px; }
+    .period-table { min-width: 620px; }
+
+    .chart-section-card { padding: 12px; }
+    .chart-header, .analytics-top-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .chart-toolbar-row, .chart-toolbar-actions, .analytics-controls { flex-wrap: wrap; gap: 8px; }
+    .chart-tabs { flex-wrap: wrap; max-width: 100%; }
+    .chart-tab-btn { font-size: 11px; padding: 6px 10px; }
+    .chart-summary-badges { flex-wrap: wrap; }
+    .chart-container-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .chart-container-wrap svg { max-width: 100%; height: auto; }
+    .chart-custom-range, .chart-date-filter-group, .filter-group-inline, .chart-groupby-row { flex-wrap: wrap; width: 100%; }
+    .chart-select, .filter-group-inline select { max-width: 100%; min-width: 0; }
+
+    .agent-tabs-bar { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .result-card { flex: 0 0 auto; min-width: 150px; max-width: 82vw; }
+
+    .rank-item { align-items: flex-start; }
+    .agents-compare-list { max-height: none; }
+
+    .pagination { flex-wrap: wrap; justify-content: center; gap: 8px; padding: 12px; }
+
+    .period-header { flex-direction: column; align-items: stretch; gap: 10px; }
+    .period-search-wrap { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+    .period-search-input { flex: 1 1 150px; }
+    .period-search-wrap select { flex: 1 1 120px; }
+
+    .admin-modal-overlay { padding: 10px; align-items: flex-start; }
+    .admin-modal-card { width: 100% !important; max-width: 100%; max-height: 92dvh; overflow: auto; }
+    .chart-drill-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .admin-modal-actions { flex-direction: column; }
+    .admin-modal-actions .button { width: 100%; }
+}
+
+@media (max-width: 480px) {
+    .shell { padding: 14px 10px 28px; }
+    h1, .analytics-title-wrap h2, .period-header h2, .chart-title { font-size: 19px; }
+    .main-view-tabs { grid-template-columns: 1fr; }
+    .metric-summary-bar { grid-template-columns: 1fr !important; }
+    .topbar-actions > .button, .topbar-actions > label, .topbar-actions select { flex: 1 1 100%; }
+    .detail-actions .button, .detail-actions select { width: 100%; }
+    .chart-drill-metrics-grid { grid-template-columns: 1fr !important; }
+    .rank-item { flex-direction: column; align-items: stretch; gap: 8px; }
+    .rank-item > div:last-child { align-self: stretch; }
+    input, select, textarea { font-size: 16px; }
+}
 </style>

@@ -33,7 +33,8 @@
         agent: ['csat', 'abst', 'agbt', 'idle', 'lateness', 'breakBreach', 'sessions', 'long']
     };
 
-    function chartTabLabelKey_(metric) {
+    function chartTabLabelKey_(metric, mode) {
+        if (mode === 'agent' && metric === 'sessions') return 'chartTabTotalSessions';
         return ({
             csat: 'chartTabCsat', abst: 'chartTabAbst', agbt: 'chartTabAgbt',
             sessions: 'chartTabSessions', long: 'chartTabLong',
@@ -42,27 +43,39 @@
     }
 
     // ميتاداتا العرض الموحّدة للمقياس (لون/وحدة/عنوان/وسم) — تُستخدم في By Day و By Agent حرفياً
-    function chartMetricMeta_(metric, isArabic) {
+    function chartMetricMeta_(metric, isArabic, mode) {
         switch (metric) {
             case 'csat':
                 return { unit: '%', color: '#0f9d6b', minMaxBaseline: 100,
-                    subtitle: isArabic ? 'نسبة رضا العملاء CSAT اليومية من إجمالي التقييمات المسجلة' : 'Daily Customer Satisfaction CSAT percentage',
+                    subtitle: mode === 'agent'
+                        ? (isArabic ? 'مقارنة الوكلاء حسب نسبة رضا العملاء CSAT' : 'Compare agents by customer satisfaction CSAT percentage')
+                        : (isArabic ? 'نسبة رضا العملاء CSAT اليومية من إجمالي التقييمات المسجلة' : 'Daily Customer Satisfaction CSAT percentage'),
                     legend: isArabic ? 'معدل رضا العملاء CSAT %' : 'Customer Satisfaction CSAT %' };
             case 'abst':
                 return { unit: isArabic ? 'د' : 'min', color: '#7c3aed', minMaxBaseline: 5,
-                    subtitle: isArabic ? 'متوسط سرعة الرد ومعالجة التكتات (ABST) بالدقائق لكل يوم' : 'Daily Average ABST Handling Time in minutes',
+                    subtitle: mode === 'agent'
+                        ? (isArabic ? 'مقارنة الوكلاء حسب متوسط سرعة الرد ومعالجة التكتات (ABST)' : 'Compare agents by average ABST handling time')
+                        : (isArabic ? 'متوسط سرعة الرد ومعالجة التكتات (ABST) بالدقائق لكل يوم' : 'Daily Average ABST Handling Time in minutes'),
                     legend: isArabic ? 'معدل ABST بالدقائق' : 'Daily ABST Rate (min)' };
             case 'agbt':
                 return { unit: isArabic ? 'د' : 'min', color: '#2563eb', minMaxBaseline: 5,
-                    subtitle: isArabic ? 'متوسط وقت السلة وإنجاز التكتات (AGBT) بالدقائق لكل يوم' : 'Daily Average AGBT Basket Time in minutes',
+                    subtitle: mode === 'agent'
+                        ? (isArabic ? 'مقارنة الوكلاء حسب متوسط وقت السلة وإنجاز التكتات (AGBT)' : 'Compare agents by average AGBT basket time')
+                        : (isArabic ? 'متوسط وقت السلة وإنجاز التكتات (AGBT) بالدقائق لكل يوم' : 'Daily Average AGBT Basket Time in minutes'),
                     legend: isArabic ? 'معدل AGBT بالدقائق' : 'Daily AGBT Rate (min)' };
             case 'sessions':
                 return { unit: I18N.t('unitSessions'), color: '#0e7490', minMaxBaseline: 20,
-                    subtitle: isArabic ? 'تتبع حجم التكتات والسيشنات المنجزة يومياً' : 'Daily completed session volume',
-                    legend: isArabic ? 'السيشن اليومي (تكتات منجزة)' : 'Daily Sessions (Tickets)' };
+                    subtitle: mode === 'agent'
+                        ? (isArabic ? 'مقارنة الوكلاء حسب إجمالي التكتات والسيشنات المنجزة' : 'Compare agents by total completed session volume')
+                        : (isArabic ? 'تتبع حجم التكتات والسيشنات المنجزة يومياً' : 'Daily completed session volume'),
+                    legend: mode === 'agent'
+                        ? (isArabic ? 'إجمالي السيشنات (تكتات منجزة)' : 'Total Sessions (Tickets)')
+                        : (isArabic ? 'السيشن اليومي (تكتات منجزة)' : 'Daily Sessions (Tickets)') };
             case 'long':
                 return { unit: I18N.t('unitSessions'), color: '#d3385a', minMaxBaseline: 5,
-                    subtitle: isArabic ? 'الجلسات الطويلة التي تجاوزت حاجز الـ 20 دقيقة لكل يوم' : 'Sessions exceeding 20 minutes duration',
+                    subtitle: mode === 'agent'
+                        ? (isArabic ? 'مقارنة الوكلاء حسب إجمالي الجلسات الطويلة (20 دقيقة وفوق)' : 'Compare agents by total sessions exceeding 20 minutes')
+                        : (isArabic ? 'الجلسات الطويلة التي تجاوزت حاجز الـ 20 دقيقة لكل يوم' : 'Sessions exceeding 20 minutes duration'),
                     legend: isArabic ? 'جلسات 20 دقيقة وفوق' : 'Sessions 20m+' };
             case 'idle':
                 return { unit: isArabic ? 'س' : 'h', color: '#eab308', minMaxBaseline: 1,
@@ -112,7 +125,7 @@
                 emptyDataDesc: 'No data recorded in Google Sheet yet. Open the dashboard and use the extension to sync data.',
                 
                 // Tabs
-                tabDataView: 'Results & Data Table',
+                tabDataView: 'Table',
                 tabStatsView: 'Analytics & Charts',
                 
                 // Top Stats
@@ -208,7 +221,7 @@
                 totalBreachesLabel: 'Total Break Breaches:',
                 avgSessionsLabel: 'Avg Daily Sessions:',
                 agentTotalSessionsLabel: 'Total Sessions:',
-                agentLastDaySessionsLabel: 'Sessions (Last Day: {date}):',
+                agentLastDaySessionsLabel: 'Sessions (Last Shift: {date}):',
                 agentGoodCsatLabel: 'Good:',
                 agentBadCsatLabel: 'Bad:',
                 
@@ -255,6 +268,7 @@
                 chartSectionTitle: 'Daily Performance & ABST Trend Chart',
                 chartSectionSubtitle: 'Track your daily productivity, session volume, and average ABST across active days',
                 chartTabSessions: 'Daily Sessions',
+                chartTabTotalSessions: 'Total Sessions',
                 chartTabAbst: 'ABST Rate',
                 chartTabAgbt: 'AGBT Rate',
                 chartTabCsat: 'CSAT Score',
@@ -472,7 +486,7 @@
                 emptyDataDesc: 'لا توجد بيانات مسجلة في الشيت بعد. افتح لوحة التحكم الأصلية واستخدم الإضافة للضغط على ☁️ مزامنة سريعة إلى Google Sheets.',
                 
                 // Tabs
-                tabDataView: 'عرض النتائج والبيانات',
+                tabDataView: 'الجدول',
                 tabStatsView: 'التحليلات والمخططات',
                 
                 // Top Stats
@@ -568,7 +582,7 @@
                 totalBreachesLabel: 'إجمالي تجاوزات البريك:',
                 avgSessionsLabel: 'متوسط السيشن اليومي:',
                 agentTotalSessionsLabel: 'إجمالي السيشنات:',
-                agentLastDaySessionsLabel: 'سيشنات آخر يوم ({date}):',
+                agentLastDaySessionsLabel: 'سيشنات آخر شفت ({date}):',
                 agentGoodCsatLabel: 'Good (راضي):',
                 agentBadCsatLabel: 'Bad (غير راضي):',
                 
@@ -615,6 +629,7 @@
                 chartSectionTitle: 'المخطط البياني اليومي للأداء ومعدل ABST',
                 chartSectionSubtitle: 'تتبع مسار إنتاجيتك اليومية، عدد السيشنات، ومتوسط سرعة الرد (ABST) عبر الأيام',
                 chartTabSessions: 'السيشن اليومي',
+                chartTabTotalSessions: 'إجمالي السيشنات',
                 chartTabAbst: 'معدل ABST',
                 chartTabAgbt: 'معدل AGBT',
                 chartTabCsat: 'رضا العملاء CSAT',
@@ -1479,6 +1494,11 @@
         setTimeout(() => { const x = document.getElementById('periodDrillOverlay'); if (x && !x.classList.contains('open')) x.remove(); }, 200);
     }
 
+    function periodMonthFor_(start, end) {
+        const s = String(start || end || '');
+        return s.length >= 7 ? s.slice(0, 7) : (AppState.selectedMonth || '');
+    }
+
     function openPeriodCellDrill(email, start, end, label, metric) {
         if (!email) return;
         ensurePeriodDrillModal();
@@ -1497,14 +1517,20 @@
                     if (b) b.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">❌ ' + escPeriod(I18N.t('drillError')) + '</div>';
                 })
                 .getAgentDrillPageFromSheet(email, periodDrillSourceMetric_(metric), {
-                    month: AppState.selectedMonth || '',
+                    month: periodMonthFor_(start, end),
                     rangeStart: start || '',
                     rangeEnd: end || '',
                     pageSize: 300
                 });
-        } else if (typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_PERIOD_SUMMARY__ === 'function') {
-            const summary = window.__LOCAL_PREVIEW_GET_PERIOD_SUMMARY__(start, end, email);
-            renderPeriodDrillDaily(summary.rows || [], metric);
+        } else if (typeof window !== 'undefined' && typeof window.__LOCAL_PREVIEW_GET_PERIOD_DRILL__ === 'function') {
+            // محاكاة نفس عقد getAgentDrillPageFromSheet في GAS (header/rows)
+            const res = window.__LOCAL_PREVIEW_GET_PERIOD_DRILL__(email, periodDrillSourceMetric_(metric), {
+                month: periodMonthFor_(start, end),
+                rangeStart: start || '',
+                rangeEnd: end || '',
+                pageSize: 300
+            });
+            renderPeriodDrill(res, metric);
         } else if (bodyEl) {
             bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">' + escPeriod(I18N.t('drillPublishedOnly')) + '</div>';
         }
@@ -1539,7 +1565,7 @@
         rows.forEach((r, i) => {
             const ticket = tIdx !== -1 ? String(r[tIdx] || '').trim() : '';
             const ticketCell = ticket
-                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket) + ticketCopyButton(ticket)
                 : '—';
             html += '<tr>';
             html += '<td class="drill-idx">' + (i + 1) + '</td>';
@@ -1575,7 +1601,7 @@
         rows.forEach((r, i) => {
             const ticket = String(r.ticket || '').trim();
             const ticketCell = ticket
-                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket) + ticketCopyButton(ticket)
                 : '—';
             html += '<tr><td class="drill-idx">' + (i + 1) + '</td><td>' + ticketCell + '</td>';
             html += '<td dir="ltr">' + escPeriod(r.datetime || '') + '</td>';
@@ -1592,29 +1618,6 @@
         bodyEl.querySelectorAll('.chart-drilldown-ticket').forEach(btn => {
             btn.addEventListener('click', () => openAgbtDetails(btn.getAttribute('data-ticket-id'), 0));
         });
-    }
-
-    // عرض ملخّص الأيام (المعاينة المحلية) — نفس الأرقام التي كوّنت خلية الجدول بالضبط
-    function renderPeriodDrillDaily(rows, metric) {
-        const bodyEl = document.getElementById('periodDrillBody');
-        if (!bodyEl) return;
-        if (!rows || !rows.length) {
-            bodyEl.innerHTML = '<div class="chart-drilldown-state chart-drilldown-empty">📭 ' + escPeriod(I18N.t('drillEmpty')) + '</div>';
-            return;
-        }
-        let html = '<div class="chart-drilldown-scroll"><table class="chart-drilldown-table"><thead><tr>';
-        html += '<th>#</th><th>Date</th><th>Sessions</th><th>ABST</th><th>AGBT</th><th>CSAT</th><th>20m+</th></tr></thead><tbody>';
-        rows.forEach((d, i) => {
-            html += '<tr><td class="drill-idx">' + (i + 1) + '</td>'
-                + '<td dir="ltr">' + escPeriod(d.day || '') + '</td>'
-                + '<td>' + (Number(d.sessions) || 0) + '</td>'
-                + '<td dir="ltr" class="drill-duration">' + escPeriod(formatDuration(Number(d.abstMins) || 0)) + '</td>'
-                + '<td dir="ltr" class="drill-duration">' + escPeriod(formatDuration(Number(d.agbtMins) || 0)) + '</td>'
-                + '<td>' + (Number(d.csat) || 0) + '%</td>'
-                + '<td>' + (Number(d.long) || 0) + '</td></tr>';
-        });
-        html += '</tbody></table></div>';
-        bodyEl.innerHTML = html;
     }
 
     function periodCellHtml(v, metric, email, period) {
@@ -1660,9 +1663,10 @@
         const mode = (AppState.chartGroupBy === 'agent') ? 'agent' : 'day';
         const active = activeChartMetricKey_();
         group.innerHTML = CHART_METRIC_TABS[mode].map(key => {
-            const label = I18N.t(chartTabLabelKey_(key)) || (METRIC_LABELS[key] || key);
+            const labelKey = chartTabLabelKey_(key, mode);
+            const label = I18N.t(labelKey) || (METRIC_LABELS[key] || key);
             const isActive = key === active;
-            const color = (chartMetricMeta_(key, false).color) || '';
+            const color = (chartMetricMeta_(key, false, mode).color) || '';
             return `<button type="button" class="chart-tab-btn${isActive ? ' active' : ''}" role="tab" aria-selected="${isActive ? 'true' : 'false'}" data-chart="${key}" style="--mc:${color}">${escPeriod(label)}</button>`;
         }).join('');
     }
@@ -1908,6 +1912,31 @@
 
         // تفويض نقر زر "تفاصيل" في عمود المساهمة (AGBT)
         document.addEventListener('click', (e) => {
+            const copyBtn = e.target && e.target.closest ? e.target.closest('.ticket-copy') : null;
+            if (copyBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const ticketId = copyBtn.getAttribute('data-ticket') || '';
+                if (ticketId) {
+                    const done = () => {
+                        copyBtn.classList.add('copied');
+                        const prevTitle = copyBtn.getAttribute('title');
+                        copyBtn.setAttribute('title', 'Copied!');
+                        setTimeout(() => { copyBtn.classList.remove('copied'); if (prevTitle) copyBtn.setAttribute('title', prevTitle); }, 1200);
+                    };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(ticketId).then(done).catch(() => {});
+                    } else {
+                        try {
+                            const ta = document.createElement('textarea');
+                            ta.value = ticketId; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                            done();
+                        } catch (_) {}
+                    }
+                }
+                return;
+            }
             const btn = e.target && e.target.closest ? e.target.closest('.agbt-details-btn') : null;
             if (btn) {
                 const ticketId = btn.getAttribute('data-ticket-id');
@@ -2767,6 +2796,12 @@
         const label = el('cloudStatusLabel');
         if (label) label.textContent = I18N.t('cloudUpdating');
         message(I18N.t('cloudUpdating'));
+        // عند عدم وجود بيانات معروضة بعد: أظهر حالة التحميل بدل الحالة الفارغة
+        if (!AppState.agents || AppState.agents.length === 0) {
+            if (el('empty')) el('empty').hidden = true;
+            if (el('detail')) el('detail').hidden = true;
+            if (el('mainLoading')) el('mainLoading').hidden = false;
+        }
 
         if (typeof google !== 'undefined' && google.script && google.script.run) {
             dashboardReadRunner_()
@@ -2786,6 +2821,7 @@
     }
 
     function handleSheetDataSuccess(response) {
+        if (el('mainLoading')) el('mainLoading').hidden = true;
         if (!response || response.success !== true || !Array.isArray(response.agents)) {
             handleSheetDataError(response);
             return;
@@ -2861,6 +2897,9 @@
 
     function handleSheetDataError(err) {
         AppState.sheetLoading = false;
+        if (el('mainLoading')) el('mainLoading').hidden = true;
+        if (el('empty')) el('empty').hidden = false;
+        if (el('detail')) el('detail').hidden = true;
         const refresh = el('btnRefreshSheet');
         if (refresh) { refresh.disabled = false; refresh.removeAttribute('aria-busy'); }
         const label = el('cloudStatusLabel');
@@ -3020,10 +3059,10 @@
             if (el('topMetricSelect')) el('topMetricSelect').value = metric;
             if (el('agent')) el('agent').value = '';
 
-            el('detailAgent').textContent = I18N.t('allAgentsTitle');
+            el('detailAgent').style.display = 'none';
             el('detailMetric').textContent = METRIC_LABELS[metric] || 'All';
             el('colCountBadge').textContent = `${AppState.agents.length} ${I18N.t('agentUnit')}`;
-            el('meta').textContent = I18N.t('allAgentsMeta', { metric: METRIC_LABELS[metric] || 'All' });
+            el('meta').style.display = 'none';
             el('metricFilterToolbar').hidden = true;
             renderMetricSummaryBarAllAgents(metric);
             renderDetailTableOnly();
@@ -3060,6 +3099,8 @@
                 csatBadgeHtml = `<span class="agent-title-csat-badge csat-target-none" title="No CSAT data">—</span>`;
             }
 
+            el('detailAgent').style.display = '';
+            el('meta').style.display = '';
             el('detailAgent').innerHTML = `${escapeHtml(agent.name)}${csatBadgeHtml}`;
             el('detailMetric').textContent = METRIC_LABELS[metric] || metric;
             el('colCountBadge').textContent = agent.email;
@@ -3266,10 +3307,10 @@
         };
         if (typeof google !== 'undefined' && google.script && google.script.run) {
             dashboardReadRunner_().withSuccessHandler(done).withFailureHandler(() => done(null))
-                .getAgentDailyTimeline(email, false, null, null, month);
+                .getAgentDailyTimeline(email, true, null, null, month);
         } else {
             const days = typeof window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__ === 'function'
-                ? window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__(email, month) : computeAgentDaysLocally(email, false);
+                ? window.__LOCAL_PREVIEW_GET_AGENT_TIMELINE__(email, month, true) : computeAgentDaysLocally(email, true);
             Promise.resolve().then(() => done({ success: true, days: Array.isArray(days) ? days : (days && days.days) || [] }));
         }
     }
@@ -3450,7 +3491,7 @@
                 { key: 'lateness', label: I18N.t('colLateness') },
                 { key: 'idle', label: I18N.t('colIdle') },
                 { key: 'productivity', label: I18N.t('colProductivity') },
-                { key: null, label: I18N.t('colSessions') }
+                { key: 'sessions', label: I18N.t('colSessions') }
             ];
         } else {
             columns = [
@@ -3458,20 +3499,21 @@
                 { key: 'name', label: I18N.t('colName') },
                 { key: 'metricVal', label: I18N.t('colMetricVal', { metric: METRIC_LABELS[metric] }) },
                 { key: 'status', label: I18N.t('colStatus') },
-                { key: null, label: I18N.t('colSessions') }
+                { key: 'sessions', label: I18N.t('colSessions') }
             ];
         }
 
         columns.forEach(colObj => {
             const th = document.createElement('th');
             if (colObj.key === 'index') {
+                th.classList.add('col-rank');
                 th.style.width = '38px';
                 th.style.minWidth = '38px';
                 th.style.textAlign = 'center';
             }
             if (colObj.key) {
                 const isSorted = AppState.sortCol === colObj.key;
-                th.className = 'sortable' + (isSorted ? (AppState.sortAsc ? ' sorted-asc' : ' sorted-desc') : '');
+                th.className = (colObj.key === 'index' ? 'col-rank ' : '') + 'sortable' + (isSorted ? (AppState.sortAsc ? ' sorted-asc' : ' sorted-desc') : '');
                 th.style.cursor = 'pointer';
                 const icon = isSorted ? (AppState.sortAsc ? ' ▲' : ' ▼') : ' ↕';
                 th.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; justify-content:space-between; width:100%;">
@@ -4346,7 +4388,7 @@
         rows.forEach((r, i) => {
             const ticket = String(r.ticket || '').trim();
             const ticketCell = ticket
-                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket)
+                ? '<button type="button" class="chart-drilldown-ticket" data-ticket-id="' + escPeriod(ticket) + '">' + escPeriod(ticket) + '</button>' + boTicketLink(ticket) + ticketCopyButton(ticket)
                 : '—';
             html += '<tr>';
             html += '<td class="drill-idx">' + (i + 1) + '</td>';
@@ -4533,6 +4575,12 @@
         const url = 'https://backoffice.tabby.sa/tickets/' + encodeURIComponent(id);
         return ' <a class="bo-ticket-link" href="' + url + '" target="_blank" rel="noopener noreferrer" title="Open in Backoffice">BO <span aria-hidden="true">↗</span></a>';
     }
+    // زر نسخ رقم التكت فقط
+    function ticketCopyButton(ticketId) {
+        const id = String(ticketId == null ? '' : ticketId).trim();
+        if (!id || id === '—') return '';
+        return ' <button type="button" class="ticket-copy" data-ticket="' + escapeHtml(id) + '" title="Copy ticket ID" aria-label="Copy ticket ID"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>';
+    }
     function isTicketIdCol_(colName) {
         const c = String(colName || '').toLowerCase().trim();
         if (!c) return false;
@@ -4614,7 +4662,7 @@
             }
         }
 
-        if (isTicketIdCol_(colName)) return escapeHtml(text) + boTicketLink(text);
+        if (isTicketIdCol_(colName)) return escapeHtml(text) + boTicketLink(text) + ticketCopyButton(text);
         return escapeHtml(text);
     }
 
@@ -4964,6 +5012,14 @@
                 if (va > vb) return asc ? 1 : -1;
                 return 0;
             });
+        } else {
+            filtered.sort((a, b) => {
+                const da = extractCellDate(a, header) || '';
+                const db = extractCellDate(b, header) || '';
+                if (da < db) return 1;
+                if (da > db) return -1;
+                return 0;
+            });
         }
 
         const total = filtered.length;
@@ -5040,9 +5096,9 @@
             AppState.analyticsLoading = false;
         }
 
-        // All Agents: أخفِ بطاقات KPI العلوية واعرض أرقام الفريق داخل مربع الإحصائيات السفلي
+        // بطاقات KPI العلوية أُزيلت من العرض (تبقى أرقام الفريق في مربع الإحصائيات السفلي)
         const heroGrid = el('analyticsHeroGrid');
-        if (heroGrid) heroGrid.style.display = isSingleAgent ? '' : 'none';
+        if (heroGrid) heroGrid.style.display = 'none';
         document.querySelectorAll('.team-kpi-stat').forEach(b => { b.style.display = isSingleAgent ? 'none' : ''; });
 
         if (isSingleAgent) {
@@ -5880,9 +5936,13 @@
     // وضع المعاينة فقط: استخدام حقول ملخص الوكلاء المحلي كما هي (بدون إعادة حساب)
     function computeAgentsChartLocally(metric) {
         const agents = Array.isArray(AppState.agents) ? AppState.agents : [];
-        return agents.map(a => {
+        const res = agents.map(a => {
             let v = null;
-            const rawValue = metric === 'breakBreach' ? a.breakExceedMins : a[metric];
+            const rawValue = metric === 'breakBreach'
+                ? a.breakExceedMins
+                : (metric === 'long'
+                    ? (a.longSessions !== undefined ? a.longSessions : a.long)
+                    : a[metric]);
             if (rawValue === null || rawValue === undefined || rawValue === '') {
                 return { email: a.email, name: a.name || a.email, value: null };
             }
@@ -5892,11 +5952,19 @@
             else if (metric === 'idle') v = hoursValueToMinutes(a.idle) / 60;
             else if (metric === 'lateness') v = Number(a.lateness);
             else if (metric === 'breakBreach') v = Number(a.breakExceedMins);
+            else if (metric === 'sessions') v = Math.round(Number(a.sessions) || 0);
+            else if (metric === 'long') v = Math.round(Number(a.longSessions !== undefined ? a.longSessions : a.long) || 0);
             if (v === null || isNaN(v)) v = null;
             const entry = { email: a.email, name: a.name || a.email, value: v };
             if (metric === 'breakBreach') entry.breaches = parseInt(a.breakBreach, 10) || 0;
             return entry;
         });
+        res.sort((x, y) => {
+            const vx = (x.value === null || x.value === undefined) ? -Infinity : Number(x.value);
+            const vy = (y.value === null || y.value === undefined) ? -Infinity : Number(y.value);
+            return vy - vx;
+        });
+        return res;
     }
 
     // يعرض قيمة المقياس عبر الـGlobal Formatter نفسه (لا Formatter منفصل)
@@ -5905,6 +5973,7 @@
         if (metric === 'csat') return `${value}%`;
         if (metric === 'breakBreach') return breachExceedText(value); // الأساسي: دقائق التجاوز
         if (metric === 'idle') return fmtHours(value);
+        if (metric === 'sessions' || metric === 'long') return `${Math.round(value)} ${I18N.t('unitSessions')}`;
         return fmtMinutes(value); // agbt / abst / lateness
     }
 
@@ -5921,11 +5990,11 @@
 
         const isArabic = I18N.currentLang === 'ar';
         const metric = AppState.agentChartMetric || 'abst';
-        const meta = chartMetricMeta_(metric, isArabic);
+        const meta = chartMetricMeta_(metric, isArabic, 'agent');
 
         // نفس هيكل/عنوان By Day — يتغيّر المحتوى حسب المقياس فقط
         renderChartMetricTabs();
-        if (el('chartSubtitle')) el('chartSubtitle').textContent = I18N.t('chartAgentSubtitle');
+        if (el('chartSubtitle')) el('chartSubtitle').textContent = meta.subtitle || I18N.t('chartAgentSubtitle');
         if (el('chartLegendText')) el('chartLegendText').textContent = meta.legend;
         if (el('chartBadgeDot')) el('chartBadgeDot').style.background = meta.color;
 
@@ -5989,6 +6058,7 @@
         const metricIsDuration = (metric === 'abst' || metric === 'agbt');
         const metricIsIdle = (metric === 'idle');
         const metricIsPercent = (metric === 'csat');
+        const metricIsCount = (metric === 'sessions' || metric === 'long');
         const isDecimalMode = (AppState.timeMode || 'decimal') === 'decimal';
         const metricDisplayDivisor = 1; // Duration values are minutes, matching tables.
         const agentValues = agents.map(a => Number(a.value)).filter(v => isFinite(v));
@@ -6011,7 +6081,7 @@
         const chartDecimals = ((metricIsDuration && isDecimalMode) || metricIsIdle)
             ? Math.max(2, scale.decimals)
             : Math.min(2, scale.decimals);
-        const fmt = v => {
+        const fmt = (v, isAxis = false) => {
             if (v === null || v === undefined || isNaN(Number(v))) return '—';
             if (metricIsPercent) return `${Number(v.toFixed(chartDecimals))}%`;
             if (metric === 'breakBreach') return breachExceedText(v); // الأساسي: دقائق التجاوز
@@ -6019,6 +6089,10 @@
             if (metricIsDuration) {
                 if (!isDecimalMode) return formatDuration(v);
                 return formatDuration(v);
+            }
+            if (metricIsCount) {
+                const rounded = Math.round(v);
+                return isAxis ? `${rounded}` : `${rounded}`;
             }
             return formatAgentMetricValue(metric, v);
         };
@@ -6034,7 +6108,7 @@
             const val = (scale.min + s * scale.step) * metricDisplayDivisor;
             const y = getY(val);
             grid += `<line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" stroke="rgba(148,163,184,0.12)" stroke-dasharray="3 4" stroke-width="1" />`;
-            grid += `<text x="${padX - 8}" y="${y + 4}" fill="#94a3b8" font-size="10" text-anchor="end" font-family="'JetBrains Mono',monospace">${escapeHtml(fmt(val))}</text>`;
+            grid += `<text x="${padX - 8}" y="${y + 4}" fill="#94a3b8" font-size="10" text-anchor="end" font-family="'JetBrains Mono',monospace">${escapeHtml(fmt(val, true))}</text>`;
         }
 
         let bars = '';
@@ -6053,7 +6127,7 @@
             const barsBreach = (metric === 'breakBreach') ? parseInt(a.breaches, 10) || 0 : null;
             const titleText = (metric === 'breakBreach')
                 ? name + '\n' + meta.legend + ': ' + label + '\n' + breachCountText(barsBreach)
-                : name + '\n' + meta.legend + ': ' + label;
+                : name + '\n' + meta.legend + ': ' + (metricIsCount ? `${Math.round(val)} ${I18N.t('unitSessions')}` : label);
             const nameEl = `<text x="${cx}" y="${nameY}" fill="var(--text)" font-size="12" font-weight="600" text-anchor="middle" style="unicode-bidi:plaintext;">${nameLines[i].map((line, j) => `<tspan x="${cx}" dy="${j ? 18 : 0}">${escapeHtml(line)}</tspan>`).join('')}</text>`;
             bars += `<g class="chart-bar-group" tabindex="0">
                 <title>${escapeHtml(titleText)}</title>
@@ -6071,7 +6145,7 @@
         </svg>`;
 
         if (badge) badge.textContent = I18N.t('chartAgentCountBadge', { count: count });
-        if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = fmt(sum / count);
+        if (el('chartBenchmarkVal')) el('chartBenchmarkVal').textContent = metricIsCount ? `${Math.round(sum / count)} ${I18N.t('unitSessions')}` : fmt(sum / count);
     }
 
     // مقياس محور العرض (Presentation only): يحسب نطاق الرسم وخطواته ودقته فقط.
@@ -6841,7 +6915,9 @@
             plan_breaks_h: ['مدة البريك المجدولة (ساعة)', 'Scheduled break duration (hours)'],
             fact_breaks_h: ['البريك الفعلي (ساعة)', 'Actual breaks (hours)'],
             break_exceed: ['تجاوز البريك', 'Break exceeded'],
+            break_exceed_time: ['تجاوز البريك (دقيقة)', 'Break Exceed (min)'],
             exceed_mins: ['مدة التجاوز (دقيقة)', 'Exceed (min)'],
+            shift_date: ['تاريخ الشفت', 'Shift date'],
             report_dt: ['تاريخ التقرير', 'Report date'],
             lateness: ['التأخير (دقيقة)', 'Lateness (min)'],
             lateness_mins: ['التأخير (دقيقة)', 'Lateness (min)'],
@@ -6889,21 +6965,25 @@
                 const metricKey = table.id === 'dataTable' ? String(AppState.selectedMetric || '').toLowerCase() : '';
                 const metricColumns = {
                     idle: /^(date|day|report_dt|plan_shift_start|time_not_working_h|time_not_working_h_shift_adjusted)$/,
-                    lateness: /^(date|day|report_dt|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
-                    breakbreach: /^(date|day|report_dt|break_exceed|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
-                    csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel|status|status_before_closure)$/,
+                    lateness: /^(date|day|report_dt|shift_date|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
+                    breakbreach: /^(date|day|report_dt|shift_date|break_exceed|break_exceed_time|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
+                    csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|report_dt|date_resolved_dubai|csat_submitted_at_dubai|created_at_dubai|date|day|channel|ticket_channel|status|status_before_closure)$/,
                     abst: /^(ticket_id|ticket_number|created_at_dubai|date|day|basket_session_time_min|session_time_min|abst)$/,
                     agbt: /^(ticket_id|ticket_number|created_at_dubai|date|day|sum_basket_time_for_ticket_per_hour_min_online_womt|sum_basket_time_for_ticket_per_hour_min|basket_time|agbt|contribution|المساهمة)$/
                 };
                 const columnKeys = headers.map(h => String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_'));
-                const datePriority = ['plan_shift_start', 'csat_submitted_at_dubai', 'created_at_dubai', 'date_resolved_dubai', 'date', 'day', 'report_dt'];
+                const datePriority = ['plan_shift_start', 'report_dt', 'csat_submitted_at_dubai', 'created_at_dubai', 'date_resolved_dubai', 'date', 'day', 'shift_date'];
                 const primaryDate = datePriority.find(c => columnKeys.includes(c));
                 const seenSimpleColumns = new Set();
                 const breakValueIndexes = metricKey === 'breakbreach'
                     ? columnKeys.map((c, i) => /^(break_exceed|break_exceed_mins|break_exceed_minutes|exceed_mins|exceed_minutes|exceed|break_exceed_time)$/.test(c) ? i : -1).filter(i => i >= 0)
                     : [];
-                if (simple && metricKey === 'lateness') {
-                    const dateIndex = columnKeys.findIndex(c => /^(date|day|report_dt)$/.test(c));
+                const breakStatusIndexes = metricKey === 'breakbreach' ? columnKeys.map((c, i) => c === 'break_exceed' ? i : -1).filter(i => i >= 0) : [];
+                const firstBreakIndex = breakStatusIndexes.length ? breakStatusIndexes[0] : -1;
+                const numericBreakIndex = breakStatusIndexes.length > 1 ? breakStatusIndexes[breakStatusIndexes.length - 1] : -1;
+                const hasBreakTime = metricKey === 'breakbreach' && columnKeys.includes('break_exceed_time');
+                if (simple && (metricKey === 'lateness' || metricKey === 'csat')) {
+                    const dateIndex = columnKeys.findIndex(c => /^(date|day|report_dt|shift_date)$/.test(c));
                     if (dateIndex > 0) {
                         const move = (row) => { const cells = Array.from(row.children); const cell = cells[dateIndex]; if (cell) row.insertBefore(cell, row.firstElementChild); };
                         move(table.tHead && table.tHead.rows[0]);
@@ -6925,16 +7005,32 @@
                     // Prefer the actual Idle source; adjusted is a fallback, not a second KPI.
                     const duplicateIdle = metricKey === 'idle' && normalized === 'time_not_working_h_shift_adjusted' &&
                         headers.some(h => String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_') === 'time_not_working_h');
-                    const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate && metricKey !== 'lateness';
-                    const duplicateColumn = !!metricColumns[metricKey] && seenSimpleColumns.has(normalized);
+                    const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate && metricKey !== 'lateness' && !(metricKey === 'csat' && normalized === 'report_dt');
+                    const isBreakPair = metricKey === 'breakbreach' && normalized === 'break_exceed';
+                    const duplicateColumn = !!metricColumns[metricKey] && seenSimpleColumns.has(normalized) && !isBreakPair;
                     seenSimpleColumns.add(normalized);
                     const keepCsatStatus = metricKey === 'csat' && (normalized === 'status' || normalized === 'status_before_closure');
-                    const omit = simple && ((!keepCsatStatus && hidden.test(normalized)) || abstExtra || irrelevant || duplicateIdle || duplicateDate || duplicateColumn);
+                    const duplicateLateness = metricKey === 'lateness' && normalized === 'exceed_mins' &&
+                        headers.some(h => /^(lateness|lateness_mins|lateness_minutes|late_mins|late_minutes)$/.test(String(h.dataset.originalLabel || h.textContent).trim().toLowerCase().replace(/[\s-]+/g, '_')));
+                    const omit = simple && ((!keepCsatStatus && hidden.test(normalized)) || abstExtra || irrelevant || duplicateIdle || duplicateDate || duplicateColumn || duplicateLateness);
                     th.hidden = omit;
-                    const translated = normalized === 'exceed_mins' && metricKey === 'lateness'
-                        ? ['التأخير (دقيقة)', 'Lateness (min)']
-                        : normalized === 'exceed_mins' && metricKey === 'breakbreach'
-                            ? ['تجاوز البريك (دقيقة)', 'Break overrun (min)'] : labels[normalized];
+                    let translated;
+                    if (metricKey === 'breakbreach' && normalized === 'break_exceed') {
+                        const isStatusCol = index === firstBreakIndex && (hasBreakTime || numericBreakIndex !== -1) && (numericBreakIndex === -1 || index !== numericBreakIndex);
+                        translated = isStatusCol
+                            ? ['حالة تجاوز البريك', 'Break Exceed (Status)']
+                            : ['تجاوز البريك (دقيقة)', 'Break Exceed (min)'];
+                    } else if (metricKey === 'breakbreach' && normalized === 'break_exceed_time') {
+                        translated = ['تجاوز البريك (دقيقة)', 'Break Exceed (min)'];
+                    } else if (metricKey === 'csat' && normalized === 'report_dt') {
+                        translated = ['تاريخ التقييم', 'Rating date'];
+                    } else if (normalized === 'exceed_mins' && metricKey === 'lateness') {
+                        translated = ['التأخير (دقيقة)', 'Lateness (min)'];
+                    } else if (normalized === 'exceed_mins' && metricKey === 'breakbreach') {
+                        translated = ['مدة التجاوز (دقيقة)', 'Exceed (min)'];
+                    } else {
+                        translated = labels[normalized];
+                    }
                     if (simple && translated) th.title = original + ' — ' + translated[I18N.currentLang === 'ar' ? 0 : 1];
                     const display = simple ? (translated ? translated[I18N.currentLang === 'ar' ? 0 : 1] : original.replace(/_/g, ' ')) : original;
                     if (label.textContent !== display) label.textContent = display;
@@ -6966,7 +7062,12 @@
                                 number.className = 'simple-ticket-number'; number.dir = 'ltr';
                                 number.textContent = ticketId.slice(-5); number.title = ticketId;
                                 const shortcut = bo.cloneNode(true);
-                                cell.replaceChildren(number, document.createTextNode(' '), shortcut);
+                                const nodes = [number, document.createTextNode(' '), shortcut];
+                                const copyWrap = document.createElement('span');
+                                copyWrap.innerHTML = ticketCopyButton(ticketId);
+                                const copyBtn = copyWrap.firstElementChild;
+                                if (copyBtn) nodes.push(document.createTextNode(' '), copyBtn);
+                                cell.replaceChildren(...nodes);
                                 cell.title = ticketId;
                             }
                         } else if (!simple && saved) {
@@ -6975,7 +7076,8 @@
                         }
                         if (simple && !cell.title) cell.title = cell.textContent.trim();
                         if (metricKey === 'breakbreach' && simple && breakValueIndexes.length) {
-                            row.hidden = !breakValueIndexes.some(i => {
+                            const candidateIndexes = numericBreakIndex !== -1 ? [numericBreakIndex] : breakValueIndexes;
+                            row.hidden = !candidateIndexes.some(i => {
                                 const value = String(row.cells[i].textContent || '').trim().toLowerCase();
                                 return value && value !== '—' && value !== '-' && value !== '0' && value !== '0.00' &&
                                     !/^(no|false|not met|لا|غير متجاوز)$/.test(value);
@@ -7037,11 +7139,22 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupTableScrollButtons_, { once: true });
     else setupTableScrollButtons_();
 
+    let messageHideTimer = null;
     function message(text, isError = false) {
         const s = el('status');
         if (!s) return;
         s.textContent = text;
         s.style.color = isError ? 'var(--danger)' : 'var(--text-sub)';
+        s.style.display = '';
+        if (messageHideTimer) { clearTimeout(messageHideTimer); messageHideTimer = null; }
+        const raw = String(text == null ? '' : text).trim();
+        const isLoading = raw === I18N.t('cloudUpdating') || /^[🔄⏳]/.test(raw) || /…$/.test(raw);
+        if (isLoading) return;
+        messageHideTimer = setTimeout(() => {
+            s.textContent = '';
+            s.style.display = 'none';
+            messageHideTimer = null;
+        }, isError ? 6000 : 4000);
     }
 
 })();
