@@ -6829,12 +6829,14 @@
             channel: ['القناة', 'Channel'], topic: ['الموضوع', 'Topic'],
             ticket_country: ['الدولة', 'Country'], date_resolved_dubai: ['تاريخ الإغلاق', 'Resolved at'],
             csat_submitted_at_dubai: ['تاريخ التقييم', 'Rated at'],
+            status: ['حالة التكت', 'Ticket status'],
+            status_before_closure: ['حالة التكت قبل الإغلاق', 'Ticket status before closure'],
             basket_session_time_min: ['ABST (دقيقة)', 'ABST (min)'],
             time_not_working_h: ['وقت الخمول (ساعة)', 'Idle time (hours)'],
             time_not_working_h_shift_adjusted: ['الخمول المعدّل للشفت (ساعة)', 'Shift-adjusted idle (hours)'],
             date: ['التاريخ', 'Date'], day: ['اليوم', 'Day'],
-            plan_shift_start: ['بداية الدوام المجدولة', 'Planned shift start'],
-            fact_shift_start: ['بداية الدوام الفعلية', 'Actual shift start'],
+            plan_shift_start: ['وقت الدخول المجدول', 'Scheduled entry time'],
+            fact_shift_start: ['وقت الدخول الفعلي', 'Actual entry time'],
             plan_shift_end: ['نهاية الدوام المجدولة', 'Planned shift end'],
             plan_breaks_h: ['مدة البريك المجدولة (ساعة)', 'Scheduled break duration (hours)'],
             fact_breaks_h: ['البريك الفعلي (ساعة)', 'Actual breaks (hours)'],
@@ -6889,7 +6891,7 @@
                     idle: /^(date|day|report_dt|plan_shift_start|time_not_working_h|time_not_working_h_shift_adjusted)$/,
                     lateness: /^(date|day|report_dt|plan_shift_start|fact_shift_start|lateness|lateness_mins|lateness_minutes|late_mins|late_minutes|exceed_mins)$/,
                     breakbreach: /^(date|day|report_dt|plan_shift_start|plan_breaks_h|fact_breaks_h|exceed_mins|break_exceed_mins|break_exceed_minutes)$/,
-                    csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel)$/,
+                    csat: /^(ticket_id|ticket_number|csat_adjusted|csat|score|date_resolved_dubai|csat_submitted_at_dubai|date|day|channel|ticket_channel|status|status_before_closure)$/,
                     abst: /^(ticket_id|ticket_number|created_at_dubai|date|day|basket_session_time_min|session_time_min|abst)$/,
                     agbt: /^(ticket_id|ticket_number|created_at_dubai|date|day|sum_basket_time_for_ticket_per_hour_min_online_womt|sum_basket_time_for_ticket_per_hour_min|basket_time|agbt|contribution|المساهمة)$/
                 };
@@ -6897,6 +6899,9 @@
                 const datePriority = ['plan_shift_start', 'csat_submitted_at_dubai', 'created_at_dubai', 'date_resolved_dubai', 'date', 'day', 'report_dt'];
                 const primaryDate = datePriority.find(c => columnKeys.includes(c));
                 const seenSimpleColumns = new Set();
+                const breakValueIndexes = metricKey === 'breakbreach'
+                    ? columnKeys.map((c, i) => /^(break_exceed|break_exceed_mins|break_exceed_minutes|exceed_mins|exceed_minutes|exceed|break_exceed_time)$/.test(c) ? i : -1).filter(i => i >= 0)
+                    : [];
                 toolbar.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'simple') === simple)));
                 table.classList.toggle('metric-table-simple', simple);
                 headers.forEach((th, index) => {
@@ -6914,7 +6919,8 @@
                     const duplicateDate = !!metricColumns[metricKey] && datePriority.includes(normalized) && normalized !== primaryDate;
                     const duplicateColumn = !!metricColumns[metricKey] && seenSimpleColumns.has(normalized);
                     seenSimpleColumns.add(normalized);
-                    const omit = simple && (hidden.test(normalized) || abstExtra || irrelevant || duplicateIdle || duplicateDate || duplicateColumn);
+                    const keepCsatStatus = metricKey === 'csat' && (normalized === 'status' || normalized === 'status_before_closure');
+                    const omit = simple && ((!keepCsatStatus && hidden.test(normalized)) || abstExtra || irrelevant || duplicateIdle || duplicateDate || duplicateColumn);
                     th.hidden = omit;
                     const translated = normalized === 'exceed_mins' && metricKey === 'lateness'
                         ? ['التأخير (دقيقة)', 'Lateness (min)']
@@ -6926,6 +6932,16 @@
                     Array.from(table.tBodies).forEach(body => Array.from(body.rows).forEach(row => {
                         if (row.cells.length !== headers.length) return;
                         const cell = row.cells[index]; cell.hidden = omit;
+                        if (simple && metricKey === 'lateness' && (normalized === 'plan_shift_start' || normalized === 'fact_shift_start')) {
+                            cell.classList.add('lateness-time-cell');
+                            cell.dir = 'ltr';
+                            const rawTime = cell.textContent.trim();
+                            if (rawTime && !cell.dataset.fullDateTime) {
+                                cell.dataset.fullDateTime = rawTime;
+                                const match = rawTime.match(/(?:T|\s)(\d{1,2}:\d{2}(?::\d{2})?)/);
+                                if (match) { cell.title = rawTime; cell.textContent = match[1]; }
+                            }
+                        } else if (!simple) cell.classList.remove('lateness-time-cell');
                         let saved = ticketCells.get(cell);
                         if (simple && !saved) {
                             const bo = cell.querySelector('a.bo-ticket-link');
@@ -6947,6 +6963,13 @@
                             ticketCells.delete(cell);
                         }
                         if (simple && !cell.title) cell.title = cell.textContent.trim();
+                        if (metricKey === 'breakbreach' && simple && breakValueIndexes.length) {
+                            row.hidden = !breakValueIndexes.some(i => {
+                                const value = String(row.cells[i].textContent || '').trim().toLowerCase();
+                                return value && value !== '—' && value !== '-' && value !== '0' && value !== '0.00' &&
+                                    !/^(no|false|not met|لا|غير متجاوز)$/.test(value);
+                            });
+                        } else if (!simple || metricKey !== 'breakbreach') row.hidden = false;
                     }));
                 });
             });
